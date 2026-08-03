@@ -30,3 +30,4 @@ zeroclaw-release/       # Downloaded release binary
 # Logs
 logs/
 *.log
+zeroclaw/
