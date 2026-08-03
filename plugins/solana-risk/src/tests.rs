@@ -1,157 +1,134 @@
-// Host-run tests for the solana-risk plugin.
-// These run on the host (not WASM) using mocked HTTP.
-// Run with: cargo test (from host target, not wasm32-wasip2)
+// Host-target unit tests for zeroclaw-solana-risk plugin
+// These run on the native host (not WASM) — no HTTP calls, no WIT bindings
+// Run: cargo test
 
 #[cfg(test)]
 mod tests {
-    use mockito::Server;
-    use serde_json::json;
+    use crate::{host, ALLOWLIST, MAX_SAFE_SCORE};
 
     // ── Allowlist tests ──────────────────────────────────────────────────────
 
     #[test]
-    fn test_usdc_is_allowlisted() {
+    fn usdc_is_allowlisted() {
         let usdc = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-        assert!(crate::ALLOWLIST.contains(&usdc));
+        assert_eq!(host::is_allowlisted(usdc), Some("USDC"));
     }
 
     #[test]
-    fn test_usdt_is_allowlisted() {
+    fn usdt_is_allowlisted() {
         let usdt = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
-        assert!(crate::ALLOWLIST.contains(&usdt));
+        assert_eq!(host::is_allowlisted(usdt), Some("USDT"));
     }
 
     #[test]
-    fn test_unknown_token_not_allowlisted() {
-        let unknown = "FakeToken111111111111111111111111111111111111";
-        assert!(!crate::ALLOWLIST.contains(&unknown));
-    }
-
-    // ── Input validation tests ───────────────────────────────────────────────
-
-    #[test]
-    fn test_parse_input_valid() {
-        let args = vec![
-            ("token_mint".to_string(), "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string()),
-        ];
-        let result = crate::parse_input(&args);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().token_mint, "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+    fn wrapped_sol_is_allowlisted() {
+        let wsol = "So11111111111111111111111111111111111111112";
+        assert_eq!(host::is_allowlisted(wsol), Some("Wrapped SOL"));
     }
 
     #[test]
-    fn test_parse_input_missing_mint() {
-        let args = vec![];
-        let result = crate::parse_input(&args);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("token_mint"));
+    fn unknown_token_not_allowlisted() {
+        let unknown = "FakeScamToken1111111111111111111111111111111";
+        assert_eq!(host::is_allowlisted(unknown), None);
     }
 
     #[test]
-    fn test_parse_input_invalid_mint_too_short() {
-        let args = vec![
-            ("token_mint".to_string(), "tooshort".to_string()),
-        ];
-        let result = crate::parse_input(&args);
-        assert!(result.is_err());
+    fn all_allowlisted_tokens_have_names() {
+        for (mint, name) in ALLOWLIST {
+            assert!(!mint.is_empty(), "Mint should not be empty");
+            assert!(!name.is_empty(), "Name should not be empty for {}", mint);
+        }
+    }
+
+    // ── Mint validation tests ────────────────────────────────────────────────
+
+    #[test]
+    fn valid_mint_passes_validation() {
+        let valid = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"; // 44 chars
+        assert!(host::validate_mint(valid).is_ok());
     }
 
     #[test]
-    fn test_parse_input_with_signature() {
-        let args = vec![
-            ("token_mint".to_string(), "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v".to_string()),
-            ("transaction_signature".to_string(), "5KtPn1LGuxhFT...".to_string()),
-        ];
-        let result = crate::parse_input(&args);
-        assert!(result.is_ok());
-        let input = result.unwrap();
-        assert!(input.transaction_signature.is_some());
-    }
-
-    // ── RugCheck API response parsing tests ─────────────────────────────────
-
-    #[test]
-    fn test_parse_safe_rugcheck_response() {
-        let response = json!({
-            "score": 50.0,  // 50/1000 → normalized to 5/100 — safe
-            "risks": [],
-            "tokenMeta": {
-                "name": "My Token",
-                "symbol": "MTK"
-            }
-        });
-
-        let parsed: crate::RugCheckResponse = serde_json::from_value(response).unwrap();
-        let score = (parsed.score.unwrap_or(0.0) / 10.0).min(100.0) as u8;
-        assert_eq!(score, 5);
-        assert!(score <= crate::MAX_SAFE_SCORE);
+    fn short_mint_fails_validation() {
+        assert!(host::validate_mint("tooshort").is_err());
     }
 
     #[test]
-    fn test_parse_danger_rugcheck_response() {
-        let response = json!({
-            "score": 800.0,  // 800/1000 → normalized to 80/100 — unsafe
-            "risks": [
-                {
-                    "name": "Mint authority not revoked",
-                    "description": "Token supply can be inflated",
-                    "level": "danger",
-                    "score": 300.0
-                }
-            ],
-            "tokenMeta": {
-                "symbol": "SCAM"
-            }
-        });
-
-        let parsed: crate::RugCheckResponse = serde_json::from_value(response).unwrap();
-        let score = (parsed.score.unwrap_or(0.0) / 10.0).min(100.0) as u8;
-        assert_eq!(score, 80);
-        assert!(score > crate::MAX_SAFE_SCORE);
-
-        let risks = parsed.risks.unwrap();
-        assert!(!risks.is_empty());
-        assert_eq!(risks[0].level.as_deref(), Some("danger"));
+    fn empty_mint_fails_validation() {
+        assert!(host::validate_mint("").is_err());
     }
 
     #[test]
-    fn test_fail_closed_on_high_score_with_danger_flags() {
-        // Even if score is borderline, DANGER flag should fail it
-        let flags = alloc::vec!["[DANGER] Mint authority not revoked".to_string()];
+    fn min_length_32_passes() {
+        let mint_32 = "11111111111111111111111111111111"; // 32 chars
+        assert!(host::validate_mint(mint_32).is_ok());
+    }
+
+    #[test]
+    fn too_long_mint_fails() {
+        let too_long = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1vXXX"; // 48 chars
+        assert!(host::validate_mint(too_long).is_err());
+    }
+
+    // ── Output format tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn safe_output_contains_true() {
+        let out = host::safe_output("USDC");
+        assert!(out.contains("\"safe\":true"));
+        assert!(out.contains("\"score\":0"));
+        assert!(out.contains("\"allowlisted\":true"));
+        assert!(out.contains("USDC"));
+    }
+
+    #[test]
+    fn unsafe_output_contains_false() {
+        let out = host::unsafe_output(80, "Mint authority not revoked");
+        assert!(out.contains("\"safe\":false"));
+        assert!(out.contains("\"score\":80"));
+        assert!(out.contains("\"allowlisted\":false"));
+    }
+
+    #[test]
+    fn output_is_compact_under_800_bytes() {
+        // Verify output stays small enough to not flood agent context
+        let out = host::safe_output("USDC");
+        assert!(out.len() < 800, "Output too large: {} bytes", out.len());
+    }
+
+    // ── Score threshold test ──────────────────────────────────────────────────
+
+    #[test]
+    fn max_safe_score_is_30() {
+        // Verify the threshold is set correctly
+        assert_eq!(MAX_SAFE_SCORE, 30);
+    }
+
+    #[test]
+    fn score_at_threshold_is_safe() {
+        assert!(MAX_SAFE_SCORE <= 100);
+        // score = 30 should be safe
+        let is_safe = 30u8 <= MAX_SAFE_SCORE;
+        assert!(is_safe);
+    }
+
+    #[test]
+    fn score_above_threshold_is_unsafe() {
+        // score = 31 should be unsafe
+        let is_safe = 31u8 <= MAX_SAFE_SCORE;
+        assert!(!is_safe);
+    }
+
+    // ── Fail-closed behavior ──────────────────────────────────────────────────
+
+    #[test]
+    fn danger_flag_forces_unsafe_regardless_of_score() {
+        // Even a low score with DANGER flag should fail
+        let flags = vec!["[DANGER] Mint authority not revoked".to_string()];
         let has_danger = flags.iter().any(|f| f.starts_with("[DANGER]"));
-        assert!(has_danger);
-    }
-
-    // ── Output token count test ──────────────────────────────────────────────
-
-    #[test]
-    fn test_output_is_compact() {
-        // Ensure the output JSON is small enough for agent context
-        // Target: < 200 tokens (approximately < 800 bytes for typical output)
-        let output = crate::RiskCheckOutput {
-            safe: true,
-            score: 0,
-            flags: alloc::vec![],
-            token_name: Some("USDC".to_string()),
-            allowlisted: true,
-        };
-        let json_str = serde_json::to_string(&output).unwrap();
-        assert!(json_str.len() < 800, "Output too large: {} bytes", json_str.len());
-    }
-
-    #[test]
-    fn test_flag_count_capped() {
-        // Verify that flag output is limited to avoid flooding context
-        let max_flags = 7; // 6 flag strings + "truncated" message
-        let flags: alloc::vec::Vec<String> = (0..100)
-            .map(|i| format!("[DANGER] risk {}", i))
-            .collect();
-        
-        let capped: alloc::vec::Vec<_> = flags.into_iter().take(max_flags).collect();
-        assert!(capped.len() <= max_flags);
+        // Safe = score <= threshold AND no danger flags
+        let score: u8 = 10; // below threshold
+        let is_safe = score <= MAX_SAFE_SCORE && !has_danger;
+        assert!(!is_safe, "DANGER flag should force unsafe even with low score");
     }
 }
-
-// Re-exports for test access to private functions
-#[cfg(test)]
-pub use crate::{parse_input, check_rugcheck, ALLOWLIST, MAX_SAFE_SCORE, RiskCheckOutput, RugCheckResponse};

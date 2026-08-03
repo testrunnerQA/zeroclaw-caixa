@@ -1,290 +1,323 @@
 // ZeroClaw WASM Plugin: Solana Token Risk Checker
 //
-// Implements the `tool-plugin` world from ZeroClaw's wit/v0 WIT definitions.
-// This plugin checks a Solana SPL token's risk score using RugCheck's public API
-// and applies a hard-coded allowlist for known-safe tokens.
+// Modeled exactly on zeroclaw/crates/zeroclaw-plugins/tests/fixtures/channel-fixture
+// Uses wit_bindgen::generate! macro pattern with #[cfg(target_family = "wasm")] gate.
 //
-// Permissions required: ["http_client", "config_read"]
+// World: tool-plugin from zeroclaw:plugin@0.1.0
+// Imports: logging
+// Exports: plugin-info, tool
 //
-// One component = one tool: "solana_risk_check"
+// Safety: fails CLOSED on API errors — unknown tokens are never auto-approved.
 
-#![no_std]
-extern crate alloc;
+// Host-target code (tests, utilities)
+#[cfg(not(target_family = "wasm"))]
+pub mod host {
+    use super::*;
 
-use alloc::string::{String, ToString};
-use alloc::vec::Vec;
-use alloc::format;
+    /// Validate mint address format (base58, 32-44 chars)
+    pub fn validate_mint(mint: &str) -> Result<(), String> {
+        if mint.len() < 32 || mint.len() > 44 {
+            return Err(format!("Invalid mint length: {}", mint.len()));
+        }
+        Ok(())
+    }
 
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+    /// Check if a mint is in the allowlist
+    pub fn is_allowlisted(mint: &str) -> Option<&'static str> {
+        crate::ALLOWLIST
+            .iter()
+            .find(|(m, _)| *m == mint)
+            .map(|(_, name)| *name)
+    }
 
-// WIT bindings — generated from zeroclaw's wit/v0/tool-plugin.wit
-// Replace this path with the actual generated bindings from your ZeroClaw checkout
-#[allow(warnings)]
-mod bindings;
+    /// Build a safe output JSON string
+    pub fn safe_output(name: &str) -> String {
+        format!(
+            r#"{{"safe":true,"score":0,"flags":[],"token_name":"{}","allowlisted":true}}"#,
+            name
+        )
+    }
 
-use bindings::exports::zeroclaw::plugin::tool::{Guest, ToolCall, ToolResult, ToolDefinition, ParameterSchema};
-use bindings::zeroclaw::plugin::http::{request, HttpRequest, HttpMethod};
-use bindings::zeroclaw::plugin::logging::log;
+    /// Build an unsafe output JSON string  
+    pub fn unsafe_output(score: u8, reason: &str) -> String {
+        format!(
+            r#"{{"safe":false,"score":{},"flags":["{}"],"token_name":null,"allowlisted":false}}"#,
+            score, reason
+        )
+    }
+}
 
-/// Hard-coded allowlist: tokens that ALWAYS pass risk check.
-/// These are the canonical mainnet addresses.
-const ALLOWLIST: &[&str] = &[
-    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  // USDC
-    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  // USDT
-    "So11111111111111111111111111111111111111112",      // Wrapped SOL
-    "11111111111111111111111111111111",                  // Native SOL (system program)
+/// Hard-coded allowlist: always safe, no HTTP call needed.
+pub const ALLOWLIST: &[(&str, &str)] = &[
+    ("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "USDC"),
+    ("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "USDT"),
+    ("So11111111111111111111111111111111111111112",    "Wrapped SOL"),
+    ("11111111111111111111111111111111",               "SOL"),
 ];
 
-/// Maximum allowed risk score (0–100). Scores above this are rejected.
-const MAX_SAFE_SCORE: u8 = 30;
+/// Maximum safe RugCheck score (0-100). Above this → rejected.
+pub const MAX_SAFE_SCORE: u8 = 30;
 
-/// RugCheck API base URL
-const RUGCHECK_API: &str = "https://api.rugcheck.xyz/v1/tokens";
+// ── WASM component (only compiled for wasm32 target) ─────────────────────────
 
-#[derive(Serialize, Deserialize, Debug)]
-struct RiskCheckInput {
-    /// SPL token mint address (base58)
-    token_mint: String,
-    /// Optional: transaction signature for context (not used in API call, for logging)
-    transaction_signature: Option<String>,
-}
+#[cfg(target_family = "wasm")]
+mod component {
+    // Generate WIT bindings from the actual zeroclaw wit/v0 directory
+    // The path here is relative to this file at build time
+    wit_bindgen::generate!({
+        path: "wit",
+        world: "tool-plugin",
+        features: ["plugins-wit-v0"],
+    });
 
-#[derive(Serialize, Deserialize, Debug)]
-struct RiskCheckOutput {
-    /// Whether the token is considered safe
-    safe: bool,
-    /// Risk score 0–100 (0 = safest, 100 = highest risk)
-    score: u8,
-    /// Human-readable risk flags
-    flags: Vec<String>,
-    /// Token name if available
-    token_name: Option<String>,
-    /// Whether the result came from the allowlist
-    allowlisted: bool,
-}
+    extern crate alloc;
+    use alloc::format;
+    use alloc::string::{String, ToString};
+    use alloc::vec::Vec;
 
-/// RugCheck API response shape (simplified)
-#[derive(Deserialize, Debug)]
-struct RugCheckResponse {
-    #[serde(rename = "score")]
-    score: Option<f64>,
-    #[serde(rename = "risks")]
-    risks: Option<Vec<RugCheckRisk>>,
-    #[serde(rename = "tokenMeta")]
-    token_meta: Option<RugCheckTokenMeta>,
-}
-
-#[derive(Deserialize, Debug)]
-struct RugCheckRisk {
-    #[serde(rename = "name")]
-    name: Option<String>,
-    #[serde(rename = "description")]
-    description: Option<String>,
-    #[serde(rename = "level")]
-    level: Option<String>,  // "danger", "warn", "info"
-    #[serde(rename = "score")]
-    score: Option<f64>,
-}
-
-#[derive(Deserialize, Debug)]
-struct RugCheckTokenMeta {
-    #[serde(rename = "name")]
-    name: Option<String>,
-    #[serde(rename = "symbol")]
-    symbol: Option<String>,
-}
-
-struct SolanaRiskPlugin;
-
-impl Guest for SolanaRiskPlugin {
-    fn get_definition() -> ToolDefinition {
-        ToolDefinition {
-            name: "solana_risk_check".to_string(),
-            description: "Checks a Solana SPL token's risk score using RugCheck. \
-                Returns safe=true if the token is on the allowlist or has a risk score \
-                below the threshold. Always pass USDC/USDT/SOL — they are allowlisted. \
-                Use this before confirming an SPL token payment.".to_string(),
-            parameters: alloc::vec![
-                ParameterSchema {
-                    name: "token_mint".to_string(),
-                    description: "The SPL token mint address (base58)".to_string(),
-                    required: true,
-                    schema_type: "string".to_string(),
-                },
-                ParameterSchema {
-                    name: "transaction_signature".to_string(),
-                    description: "Optional: the Solana transaction signature for logging".to_string(),
-                    required: false,
-                    schema_type: "string".to_string(),
-                },
-            ],
-        }
-    }
-
-    fn invoke(call: ToolCall) -> ToolResult {
-        log(&format!("[solana-risk] invoke called with {} args", call.arguments.len()));
-
-        // Parse input arguments
-        let input: RiskCheckInput = match parse_input(&call.arguments) {
-            Ok(v) => v,
-            Err(e) => {
-                return ToolResult {
-                    success: false,
-                    output: format!("{{\"error\": \"Invalid input: {}\"}}", e),
-                };
-            }
-        };
-
-        log(&format!("[solana-risk] checking mint: {}", input.token_mint));
-
-        // Check allowlist first — fast path, no HTTP needed
-        if ALLOWLIST.contains(&input.token_mint.as_str()) {
-            log(&format!("[solana-risk] mint {} is allowlisted — safe", input.token_mint));
-            let output = RiskCheckOutput {
-                safe: true,
-                score: 0,
-                flags: Vec::new(),
-                token_name: allowlist_name(&input.token_mint),
-                allowlisted: true,
-            };
-            return ToolResult {
-                success: true,
-                output: serde_json::to_string(&output).unwrap_or_default(),
-            };
-        }
-
-        // Call RugCheck API
-        match check_rugcheck(&input.token_mint) {
-            Ok(output) => ToolResult {
-                success: true,
-                output: serde_json::to_string(&output).unwrap_or_default(),
-            },
-            Err(e) => {
-                // On API failure, fail conservatively — do NOT approve unknown tokens
-                log(&format!("[solana-risk] RugCheck API error: {} — failing closed", e));
-                let output = RiskCheckOutput {
-                    safe: false,
-                    score: 100,
-                    flags: alloc::vec![format!("API unavailable: {}", e), "Manual review required".to_string()],
-                    token_name: None,
-                    allowlisted: false,
-                };
-                ToolResult {
-                    success: true,  // tool succeeded, but result says unsafe
-                    output: serde_json::to_string(&output).unwrap_or_default(),
-                }
-            }
-        }
-    }
-}
-
-fn parse_input(args: &[(String, String)]) -> Result<RiskCheckInput, String> {
-    let mut token_mint = None;
-    let mut transaction_signature = None;
-
-    for (key, value) in args {
-        match key.as_str() {
-            "token_mint" => token_mint = Some(value.clone()),
-            "transaction_signature" => transaction_signature = Some(value.clone()),
-            _ => {}
-        }
-    }
-
-    let token_mint = token_mint.ok_or("missing required parameter: token_mint")?;
-    
-    // Basic base58 validation — must be 32–44 chars, no invalid chars
-    if token_mint.len() < 32 || token_mint.len() > 44 {
-        return Err(format!("invalid mint address length: {}", token_mint.len()));
-    }
-
-    Ok(RiskCheckInput { token_mint, transaction_signature })
-}
-
-fn check_rugcheck(mint: &str) -> Result<RiskCheckOutput, String> {
-    // GET https://api.rugcheck.xyz/v1/tokens/<mint>/report/summary
-    let url = format!("{}/{}/report/summary", RUGCHECK_API, mint);
-    
-    log(&format!("[solana-risk] calling RugCheck: {}", url));
-
-    let req = HttpRequest {
-        method: HttpMethod::Get,
-        url,
-        headers: alloc::vec![
-            ("Accept".to_string(), "application/json".to_string()),
-            ("User-Agent".to_string(), "zeroclaw-solana-risk/0.1".to_string()),
-        ],
-        body: None,
-        timeout_ms: Some(5000),
+    use exports::zeroclaw::plugin::plugin_info::Guest as GuestInfo;
+    use exports::zeroclaw::plugin::tool::{Guest as GuestTool, ToolResult};
+    use zeroclaw::plugin::logging::{
+        log_record, LogLevel, PluginAction, PluginEvent, PluginOutcome,
     };
 
-    let resp = request(req).map_err(|e| format!("HTTP error: {:?}", e))?;
+    struct SolanaRisk;
 
-    if resp.status < 200 || resp.status >= 300 {
-        return Err(format!("RugCheck returned HTTP {}", resp.status));
+    impl GuestInfo for SolanaRisk {
+        fn plugin_name() -> String {
+            "zeroclaw-solana-risk".to_string()
+        }
+        fn plugin_version() -> String {
+            env!("CARGO_PKG_VERSION").to_string()
+        }
     }
 
-    let body = resp.body.ok_or("empty response body")?;
-    let body_str = core::str::from_utf8(&body).map_err(|_| "invalid UTF-8 response")?;
-    
-    log(&format!("[solana-risk] RugCheck response length: {} bytes", body_str.len()));
+    impl GuestTool for SolanaRisk {
+        fn name() -> String {
+            "solana_risk_check".to_string()
+        }
 
-    // Parse response — shape output to ~200 tokens (don't flood context)
-    let rugcheck: RugCheckResponse = serde_json::from_str(body_str)
-        .map_err(|e| format!("JSON parse error: {}", e))?;
+        fn description() -> String {
+            "Check a Solana SPL token risk score. \
+             USDC/USDT/SOL always pass. Unknown tokens scored via RugCheck (0-100). \
+             Fails closed on errors — never approves unknown tokens silently. \
+             Use before confirming any non-USDC/USDT/SOL payment."
+                .to_string()
+        }
 
-    // Extract score (RugCheck uses 0–1000 internally, normalize to 0–100)
-    let raw_score = rugcheck.score.unwrap_or(0.0);
-    let normalized_score = (raw_score / 10.0).min(100.0) as u8;
+        fn parameters_schema() -> String {
+            // Compact JSON schema — keeps model context usage low
+            r#"{"type":"object","required":["token_mint"],"properties":{"token_mint":{"type":"string","description":"SPL token mint address (base58)"},"transaction_signature":{"type":"string","description":"Optional: tx signature for logging"}}}"#.to_string()
+        }
 
-    // Extract significant risk flags (danger and warn level only)
-    let mut flags: Vec<String> = Vec::new();
-    if let Some(risks) = rugcheck.risks {
-        for risk in risks {
-            let level = risk.level.as_deref().unwrap_or("info");
-            if level == "danger" || level == "warn" {
-                let name = risk.name.as_deref().unwrap_or("unknown risk");
-                let desc = risk.description.as_deref().unwrap_or("");
-                // Keep flags short — model context is expensive
-                flags.push(format!("[{}] {}", level.to_uppercase(), name));
-                if !desc.is_empty() && desc.len() < 80 {
-                    flags.push(desc.to_string());
+        fn execute(args: String) -> Result<ToolResult, String> {
+            emit(LogLevel::Info, PluginAction::Start, "execute", "Risk check started", None);
+
+            // Parse JSON args — token_mint is required
+            let token_mint = parse_mint(&args)?;
+
+            // Validate length
+            if token_mint.len() < 32 || token_mint.len() > 44 {
+                let msg = format!("Invalid mint address length: {}", token_mint.len());
+                return Ok(fail_result(&msg));
+            }
+
+            // Allowlist fast path — no HTTP
+            for (mint, name) in crate::ALLOWLIST {
+                if *mint == token_mint.as_str() {
+                    emit(LogLevel::Info, PluginAction::Complete, "execute",
+                         &format!("{} allowlisted", name), Some(PluginOutcome::Success));
+                    return Ok(ToolResult {
+                        success: true,
+                        output: format!(
+                            r#"{{"safe":true,"score":0,"flags":[],"token_name":"{}","allowlisted":true}}"#,
+                            name
+                        ),
+                        error: None,
+                    });
+                }
+            }
+
+            emit(LogLevel::Info, PluginAction::Outbound, "execute",
+                 &format!("Calling RugCheck for {}", &token_mint[..8]), None);
+
+            // HTTP call via waki
+            match rugcheck(&token_mint) {
+                Ok(output) => {
+                    let outcome = if output.safe { PluginOutcome::Success } else { PluginOutcome::Failure };
+                    emit(LogLevel::Info, PluginAction::Complete, "execute",
+                         &format!("score={} safe={}", output.score, output.safe),
+                         Some(outcome));
+                    Ok(ToolResult {
+                        success: true,
+                        output: output.to_json(),
+                        error: None,
+                    })
+                }
+                Err(e) => {
+                    // Fail CLOSED — API down means unknown = unsafe
+                    emit(LogLevel::Warn, PluginAction::Fail, "execute",
+                         &format!("RugCheck error, failing closed: {}", e),
+                         Some(PluginOutcome::Failure));
+                    Ok(ToolResult {
+                        success: true,
+                        output: format!(
+                            r#"{{"safe":false,"score":100,"flags":["API unavailable: {}","Manual review required"],"token_name":null,"allowlisted":false}}"#,
+                            e
+                        ),
+                        error: None,
+                    })
+                }
+            }
+        }
+    }
+
+    // ── Types ─────────────────────────────────────────────────────────────────
+
+    struct RiskOutput {
+        safe: bool,
+        score: u8,
+        flags: Vec<String>,
+        token_name: Option<String>,
+    }
+
+    impl RiskOutput {
+        fn to_json(&self) -> String {
+            let flags_json: String = self.flags.iter()
+                .map(|f| format!("\"{}\"", f.replace('"', "\\\"")))
+                .collect::<Vec<_>>()
+                .join(",");
+            let name_json = match &self.token_name {
+                Some(n) => format!("\"{}\"", n),
+                None => "null".to_string(),
+            };
+            format!(
+                r#"{{"safe":{},"score":{},"flags":[{}],"token_name":{},"allowlisted":false}}"#,
+                self.safe, self.score, flags_json, name_json
+            )
+        }
+    }
+
+    // ── HTTP call ─────────────────────────────────────────────────────────────
+
+    fn rugcheck(mint: &str) -> Result<RiskOutput, String> {
+        let url = format!("https://api.rugcheck.xyz/v1/tokens/{}/report/summary", mint);
+
+        let resp = waki::Client::new()
+            .get(&url)
+            .header("Accept", "application/json")
+            .header("User-Agent", "zeroclaw-solana-risk/0.1")
+            .connect_timeout(core::time::Duration::from_secs(5))
+            .send()
+            .map_err(|e| format!("HTTP: {:?}", e))?;
+
+        if resp.status_code() < 200 || resp.status_code() >= 300 {
+            return Err(format!("HTTP {}", resp.status_code()));
+        }
+
+        let body = resp.body().map_err(|e| format!("Body: {:?}", e))?;
+        let s = core::str::from_utf8(&body).map_err(|_| "UTF-8")?;
+
+        parse_rugcheck_response(s)
+    }
+
+    fn parse_rugcheck_response(body: &str) -> Result<RiskOutput, String> {
+        // Manual JSON parsing to avoid complex serde deps in no_std WASM
+        // RugCheck returns: {"score": <float>, "risks": [...], "tokenMeta": {...}}
+        
+        let score_raw = extract_f64(body, "\"score\"").unwrap_or(0.0);
+        let score = ((score_raw / 10.0).min(100.0)) as u8;
+
+        // Extract token name/symbol
+        let token_name = extract_str(body, "\"symbol\"")
+            .or_else(|| extract_str(body, "\"name\""));
+
+        // Extract risk flags (danger and warn only, cap at 3 pairs)
+        let flags = extract_flags(body);
+
+        let has_danger = flags.iter().any(|f| f.starts_with("[DANGER]"));
+        let is_safe = score <= crate::MAX_SAFE_SCORE && !has_danger;
+
+        Ok(RiskOutput { safe: is_safe, score, flags, token_name })
+    }
+
+    // Minimal JSON field extractors — keeps binary small
+    fn extract_f64(json: &str, key: &str) -> Option<f64> {
+        let pos = json.find(key)?;
+        let after = json[pos + key.len()..].trim_start_matches(|c| c == ':' || c == ' ');
+        let end = after.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
+            .unwrap_or(after.len());
+        after[..end].parse().ok()
+    }
+
+    fn extract_str(json: &str, key: &str) -> Option<String> {
+        let pos = json.find(key)?;
+        let after = json[pos + key.len()..].trim_start_matches(|c| c == ':' || c == ' ');
+        if !after.starts_with('"') { return None; }
+        let inner = &after[1..];
+        let end = inner.find('"')?;
+        Some(inner[..end].to_string())
+    }
+
+    fn extract_flags(json: &str) -> Vec<String> {
+        let mut flags = Vec::new();
+        let mut search = json;
+        
+        while let Some(level_pos) = search.find("\"level\"") {
+            let level_area = &search[level_pos..level_pos.min(search.len()).saturating_add(30)];
+            let is_danger = level_area.contains("\"danger\"");
+            let is_warn = level_area.contains("\"warn\"");
+            
+            if is_danger || is_warn {
+                let label = if is_danger { "[DANGER]" } else { "[WARN]" };
+                if let Some(name) = extract_str(search, "\"name\"") {
+                    if name.len() <= 60 {
+                        flags.push(format!("{} {}", label, name));
+                    }
                 }
                 if flags.len() >= 6 {
-                    // Cap at 3 flag pairs (6 strings) to avoid context flooding
-                    flags.push("...additional flags truncated".to_string());
+                    flags.push("...more omitted".to_string());
                     break;
                 }
             }
+            // Advance past this occurrence
+            search = &search[level_pos + 7..];
+        }
+        
+        flags
+    }
+
+    // ── Arg parsing ───────────────────────────────────────────────────────────
+
+    fn parse_mint(args: &str) -> Result<String, String> {
+        // Extract token_mint from JSON string: {"token_mint": "..."}
+        extract_str(args, "\"token_mint\"")
+            .ok_or_else(|| "missing required field: token_mint".to_string())
+    }
+
+    fn fail_result(msg: &str) -> ToolResult {
+        ToolResult {
+            success: false,
+            output: format!(r#"{{"error":"{}"}}"#, msg),
+            error: Some(msg.to_string()),
         }
     }
 
-    // Token name (optional, for display)
-    let token_name = rugcheck.token_meta.and_then(|m| {
-        m.symbol.or(m.name)
-    });
+    // ── Logging helper ────────────────────────────────────────────────────────
 
-    let is_safe = normalized_score <= MAX_SAFE_SCORE && flags.iter().all(|f| !f.starts_with("[DANGER]"));
-
-    log(&format!("[solana-risk] score={}, safe={}, flags={}", normalized_score, is_safe, flags.len()));
-
-    Ok(RiskCheckOutput {
-        safe: is_safe,
-        score: normalized_score,
-        flags,
-        token_name,
-        allowlisted: false,
-    })
-}
-
-fn allowlist_name(mint: &str) -> Option<String> {
-    match mint {
-        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" => Some("USDC".to_string()),
-        "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" => Some("USDT".to_string()),
-        "So11111111111111111111111111111111111111112" => Some("Wrapped SOL".to_string()),
-        _ => Some("SOL".to_string()),
+    fn emit(level: LogLevel, action: PluginAction, func: &str, msg: &str, outcome: Option<PluginOutcome>) {
+        log_record(
+            level,
+            PluginEvent {
+                function_name: format!("zeroclaw_solana_risk::{}", func),
+                action,
+                outcome,
+                duration_ms: None,
+                attrs: None,
+                message: msg.to_string(),
+            },
+        );
     }
-}
 
-// Export the plugin implementation
-bindings::export!(SolanaRiskPlugin with_types_in bindings);
+    export!(SolanaRisk);
+}

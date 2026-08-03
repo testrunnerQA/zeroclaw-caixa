@@ -1,89 +1,117 @@
-// ZeroClaw tool-plugin WIT interface — v0
-//
-// This is the WIT definition for the zeroclaw-solana-risk plugin.
-// Adapt to match the actual wit/v0 definitions from the ZeroClaw repo.
-// Path: plugins/solana-risk/wit/tool-plugin.wit
+// ZeroClaw Plugin WIT — matches zeroclaw/wit/v0 exactly
+// Copied from: zeroclaw-labs/zeroclaw/wit/v0/
+// Package: zeroclaw:plugin@0.1.0
 
 package zeroclaw:plugin@0.1.0;
 
-/// HTTP capability for plugins
-interface http {
-  enum http-method {
-    get,
-    post,
-    put,
-    delete,
-    patch,
-    head,
-  }
-
-  record http-request {
-    method: http-method,
-    url: string,
-    headers: list<tuple<string, string>>,
-    body: option<list<u8>>,
-    timeout-ms: option<u32>,
-  }
-
-  record http-response {
-    status: u16,
-    headers: list<tuple<string, string>>,
-    body: option<list<u8>>,
-  }
-
-  enum http-error {
-    timeout,
-    connection-refused,
-    invalid-url,
-    tls-error,
-    unknown,
-  }
-
-  request: func(req: http-request) -> result<http-response, http-error>;
+@unstable(feature = plugins-wit-v0)
+interface types {
+    @unstable(feature = plugins-wit-v0)
+    type json-string = string;
 }
 
-/// Config/secrets access for plugins
-interface config {
-  get: func(key: string) -> option<string>;
-}
-
-/// Logging for plugins
+@unstable(feature = plugins-wit-v0)
 interface logging {
-  log: func(message: string);
+    @unstable(feature = plugins-wit-v0)
+    use types.{json-string};
+
+    @unstable(feature = plugins-wit-v0)
+    enum log-level {
+        trace,
+        debug,
+        info,
+        warn,
+        error,
+    }
+
+    @unstable(feature = plugins-wit-v0)
+    enum plugin-action {
+        start,
+        complete,
+        fail,
+        cancel,
+        skip,
+        timeout,
+        retry,
+        inbound,
+        outbound,
+        send,
+        receive,
+        connect,
+        disconnect,
+        reconnect,
+        spawn,
+        kill,
+        tick,
+        trigger,
+        schedule,
+        approve,
+        reject,
+        defer,
+        read,
+        write,
+        delete,
+        list-action,
+        query,
+        invoke,
+        dispatch,
+        resolve,
+        register,
+        unregister,
+        load,
+        save,
+        migrate,
+        validate,
+        note,
+        memory-audit,
+    }
+
+    @unstable(feature = plugins-wit-v0)
+    enum plugin-outcome {
+        success,
+        failure,
+    }
+
+    @unstable(feature = plugins-wit-v0)
+    record plugin-event {
+        function-name: string,
+        action: plugin-action,
+        outcome: option<plugin-outcome>,
+        duration-ms: option<u64>,
+        attrs: option<json-string>,
+        message: string,
+    }
+
+    log-record: func(level: log-level, event: plugin-event);
 }
 
-/// Tool plugin interface — implemented by the plugin
+@unstable(feature = plugins-wit-v0)
+interface plugin-info {
+    plugin-name: func() -> string;
+    plugin-version: func() -> string;
+}
+
+@unstable(feature = plugins-wit-v0)
 interface tool {
-  record parameter-schema {
-    name: string,
-    description: string,
-    required: bool,
-    schema-type: string,
-  }
+    @unstable(feature = plugins-wit-v0)
+    use types.{json-string};
 
-  record tool-definition {
-    name: string,
-    description: string,
-    parameters: list<parameter-schema>,
-  }
+    @unstable(feature = plugins-wit-v0)
+    record tool-result {
+        success: bool,
+        output: string,
+        error: option<string>,
+    }
 
-  record tool-call {
-    arguments: list<tuple<string, string>>,
-  }
-
-  record tool-result {
-    success: bool,
-    output: string,
-  }
-
-  get-definition: func() -> tool-definition;
-  invoke: func(call: tool-call) -> tool-result;
+    name: func() -> string;
+    description: func() -> string;
+    parameters-schema: func() -> json-string;
+    execute: func(args: json-string) -> result<tool-result, string>;
 }
 
-/// The world a plugin must implement
+@unstable(feature = plugins-wit-v0)
 world tool-plugin {
-  import http;
-  import config;
-  import logging;
-  export tool;
+    import logging;
+    export plugin-info;
+    export tool;
 }
