@@ -1,0 +1,136 @@
+# Payment Poll SOP
+# Cron-triggered every 30 seconds — checks all pending invoices for on-chain confirmation
+
+name = "payment-poll"
+description = "Polls Solana RPC for payment confirmation of all pending invoices"
+version = "1"
+
+[trigger]
+type = "cron"
+schedule = "*/30 * * * * *"  # every 30 seconds
+
+[[steps]]
+id = "load_pending_invoices"
+name = "Load all pending invoices from memory"
+instruction = """
+Search agent memory for all keys matching the pattern "invoice:*" where status == "pending".
+
+Use memory scan to retrieve all pending invoices. Return as a list of objects:
+[
+  {"id": <invoice_id>, "reference_key": "<pubkey>", "amount": <float>, "memo": "<string>", "created_at": "<ISO8601>", "channel_sender": "<whatsapp_number>"},
+  ...
+]
+
+If no pending invoices exist, log "No pending invoices" and stop (exit SOP successfully).
+"""
+
+[[steps]]
+id = "check_invoice_age"
+name = "Skip or expire old invoices"
+instruction = """
+For each pending invoice:
+1. Calculate age = now - created_at (in minutes)
+2. If age > 60 minutes → mark as "expired" in memory and skip to next invoice
+3. If age is 5, 15, or 30 minutes → send a payment reminder (use receipt_format skill: "Pending Reminder" format)
+4. Otherwise → continue to payment check
+
+Log expired invoices to audit trail.
+"""
+depends_on = ["load_pending_invoices"]
+
+[[steps]]
+id = "poll_rpc"
+name = "Check each invoice on-chain"
+instruction = """
+For each non-expired pending invoice, call the Solana RPC:
+
+POST {{rpc_url}}
+Content-Type: application/json
+Body:
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "getSignaturesForAddress",
+  "params": [
+    "{{invoice.reference_key}}",
+    {"commitment": "confirmed", "limit": 1}
+  ]
+}
+
+Using the payment_confirm skill, interpret the response:
+- Empty result → still pending, do nothing
+- Non-empty result with err:null → CONFIRMED → set invoice.signature = result[0].signature, mark for confirmation
+- Non-empty with err != null → FAILED → mark as "failed", notify merchant
+
+Collect all confirmed invoice IDs and their signatures for the next step.
+"""
+depends_on = ["check_invoice_age"]
+
+[[steps]]
+id = "run_risk_check"
+name = "Token risk check for confirmed payments"
+instruction = """
+For each confirmed invoice:
+1. Call the solana_risk_check plugin with:
+   - token_mint: the USDC mint address (from config)
+   - transaction_signature: the signature
+   
+   The plugin will return: {"safe": true/false, "score": 0-100, "flags": [...]}
+
+2. If safe == false OR score > 70:
+   - Mark invoice as "flagged" in memory
+   - Send alert to merchant: "⚠️ Payment received but token flagged. Tx: <sig>"
+   - Skip receipt generation
+   
+3. If safe == true (or mint is in allowlist: USDC/USDT/SOL):
+   - Continue to receipt generation
+
+Note: USDC and USDT mints are ALWAYS safe — skip risk check and go straight to receipt.
+Known safe mints:
+- EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v (USDC)
+- Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB (USDT)
+"""
+depends_on = ["poll_rpc"]
+
+[[steps]]
+id = "send_receipt"
+name = "Send payment receipt to merchant"
+instruction = """
+For each invoice that passed the risk check:
+
+1. Use the receipt_format skill to format the receipt:
+   - invoice_id: {{invoice.id}}
+   - amount: {{invoice.amount}}
+   - token: "USDC"
+   - memo: {{invoice.memo}}
+   - signature: {{invoice.signature}}
+   - blockTime: (get from RPC getTransaction response if available, else use now)
+
+2. Send the formatted receipt to:
+   - WhatsApp channel, target: {{invoice.channel_sender}}
+
+3. Update memory:
+   key: "invoice:{{invoice.id}}"
+   → set status = "completed", signature = {{invoice.signature}}, completed_at = <ISO8601>
+
+4. Append to audit log:
+   key: "audit:invoice:{{invoice.id}}"
+   → {"event":"completed","signature":"{{invoice.signature}}","timestamp":"<ISO8601>"}
+"""
+depends_on = ["run_risk_check"]
+
+[[steps]]
+id = "log_run"
+name = "Log poll run statistics"
+instruction = """
+Log a summary of this poll run to memory:
+key: "poll:last_run"
+value: {
+  "timestamp": "<ISO8601>",
+  "invoices_checked": <count>,
+  "confirmed": <count>,
+  "expired": <count>,
+  "flagged": <count>
+}
+"""
+depends_on = ["send_receipt"]

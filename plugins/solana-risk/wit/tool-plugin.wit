@@ -1,0 +1,89 @@
+// ZeroClaw tool-plugin WIT interface — v0
+//
+// This is the WIT definition for the zeroclaw-solana-risk plugin.
+// Adapt to match the actual wit/v0 definitions from the ZeroClaw repo.
+// Path: plugins/solana-risk/wit/tool-plugin.wit
+
+package zeroclaw:plugin@0.1.0;
+
+/// HTTP capability for plugins
+interface http {
+  enum http-method {
+    get,
+    post,
+    put,
+    delete,
+    patch,
+    head,
+  }
+
+  record http-request {
+    method: http-method,
+    url: string,
+    headers: list<tuple<string, string>>,
+    body: option<list<u8>>,
+    timeout-ms: option<u32>,
+  }
+
+  record http-response {
+    status: u16,
+    headers: list<tuple<string, string>>,
+    body: option<list<u8>>,
+  }
+
+  enum http-error {
+    timeout,
+    connection-refused,
+    invalid-url,
+    tls-error,
+    unknown,
+  }
+
+  request: func(req: http-request) -> result<http-response, http-error>;
+}
+
+/// Config/secrets access for plugins
+interface config {
+  get: func(key: string) -> option<string>;
+}
+
+/// Logging for plugins
+interface logging {
+  log: func(message: string);
+}
+
+/// Tool plugin interface — implemented by the plugin
+interface tool {
+  record parameter-schema {
+    name: string,
+    description: string,
+    required: bool,
+    schema-type: string,
+  }
+
+  record tool-definition {
+    name: string,
+    description: string,
+    parameters: list<parameter-schema>,
+  }
+
+  record tool-call {
+    arguments: list<tuple<string, string>>,
+  }
+
+  record tool-result {
+    success: bool,
+    output: string,
+  }
+
+  get-definition: func() -> tool-definition;
+  invoke: func(call: tool-call) -> tool-result;
+}
+
+/// The world a plugin must implement
+world tool-plugin {
+  import http;
+  import config;
+  import logging;
+  export tool;
+}

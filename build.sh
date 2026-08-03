@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Build script for Caixa — ZeroClaw Solana Pay agent
+# Run from repo root: ./build.sh
+
+set -euo pipefail
+
+echo "=== Caixa Build Script ==="
+echo ""
+
+# ── Check prerequisites ───────────────────────────────────────────────────────
+echo "[1/4] Checking prerequisites..."
+
+check_cmd() {
+    if ! command -v "$1" &> /dev/null; then
+        echo "  ❌ '$1' not found. $2"
+        return 1
+    fi
+    echo "  ✅ $1 found: $(command -v "$1")"
+}
+
+check_cmd cargo "Install Rust: https://rustup.rs/"
+check_cmd git "Install Git from your OS package manager"
+
+# Check wasm32-wasip2 target
+if rustup target list --installed | grep -q "wasm32-wasip2"; then
+    echo "  ✅ wasm32-wasip2 target installed"
+else
+    echo "  Installing wasm32-wasip2 target..."
+    rustup target add wasm32-wasip2
+fi
+
+# ── Clone ZeroClaw (if not already present) ───────────────────────────────────
+echo ""
+echo "[2/4] Setting up ZeroClaw host..."
+
+if [[ ! -d "zeroclaw" ]]; then
+    echo "  Cloning ZeroClaw..."
+    git clone https://github.com/zeroclaw-labs/zeroclaw zeroclaw
+else
+    echo "  ZeroClaw directory exists, pulling latest..."
+    git -C zeroclaw pull --ff-only
+fi
+
+echo "  Building ZeroClaw with plugin support (this takes 10-20 minutes)..."
+echo "  Command: cargo build --release --features plugins-wasm-cranelift"
+(cd zeroclaw && cargo build --release --features plugins-wasm-cranelift)
+
+ZEROCLAW_BIN="./zeroclaw/target/release/zeroclaw"
+if [[ -f "$ZEROCLAW_BIN" ]]; then
+    echo "  ✅ ZeroClaw binary built: $ZEROCLAW_BIN"
+    echo "  Version: $($ZEROCLAW_BIN --version 2>/dev/null || echo 'unknown')"
+else
+    echo "  ❌ ZeroClaw binary not found after build"
+    exit 1
+fi
+
+# ── Build the WASM plugin ────────────────────────────────────────────────────
+echo ""
+echo "[3/4] Building solana-risk WASM plugin..."
+
+# Generate WIT bindings first
+echo "  Generating WIT bindings..."
+(cd plugins/solana-risk && \
+    cargo build --release --target wasm32-wasip2 \
+    2>&1 | tail -5)
+
+WASM_PATH="plugins/solana-risk/target/wasm32-wasip2/release/zeroclaw_solana_risk.wasm"
+if [[ -f "$WASM_PATH" ]]; then
+    WASM_SIZE=$(du -h "$WASM_PATH" | cut -f1)
+    echo "  ✅ WASM plugin built: $WASM_PATH ($WASM_SIZE)"
+else
+    echo "  ❌ WASM plugin not found after build"
+    echo "  Hint: Check if wit/v0 bindings match the actual ZeroClaw WIT definitions"
+    echo "        Copy wit/ files from: zeroclaw/wit/v0/"
+    exit 1
+fi
+
+# ── Run host-target tests ────────────────────────────────────────────────────
+echo ""
+echo "[4/4] Running tests (host target)..."
+
+(cd plugins/solana-risk && cargo test --target $(rustup show | grep "Default host" | awk '{print $3}') 2>&1)
+echo "  ✅ Plugin tests passed"
+
+# ── Final instructions ────────────────────────────────────────────────────────
+echo ""
+echo "=== Build complete! ==="
+echo ""
+echo "Next steps:"
+echo "1. Copy config template: cp config/agent.example.toml config/agent.toml"
+echo "2. Fill in your API keys in config/agent.toml"
+echo "3. Set up Twilio WhatsApp webhook to: http://your-host:8080/webhook/whatsapp"
+echo "4. (For local dev) Start ngrok: ngrok http 8080"
+echo "5. Run the agent: $ZEROCLAW_BIN run --config config/agent.toml"
+echo ""
+echo "Test it:"
+echo "  Send 'charge 0.01 USDC test' to your Twilio sandbox WhatsApp number"
+echo "  Or run: ./tests/integration_test.sh"

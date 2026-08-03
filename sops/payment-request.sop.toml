@@ -1,0 +1,130 @@
+# Payment Request SOP
+# Triggered when a message arrives on the WhatsApp webhook channel
+# Channel trigger: inbound message matching payment intent
+
+name = "payment-request"
+description = "Processes a merchant payment request and generates a Solana Pay link"
+version = "1"
+
+[trigger]
+type = "channel"
+channel = "whatsapp"
+# Only trigger if message contains payment keywords
+match_pattern = "charge|invoice|cobrar|pagar|pagamento|send|pay"
+
+[[steps]]
+id = "parse_request"
+name = "Parse payment request"
+instruction = """
+Extract from the merchant's message:
+1. Amount (in USDC unless specified otherwise)
+2. Memo/description (e.g. "table 4", "order 7", "café")
+3. Any special token request (if none, default to USDC)
+
+If you cannot extract a clear amount, reply asking for clarification:
+"To create an invoice, please specify the amount. Example: 'charge 25 USDC'"
+
+Store extracted data as:
+- amount: <float>
+- token: "USDC" (or as specified)
+- memo: "<extracted description>"
+"""
+
+[[steps]]
+id = "check_threshold"
+name = "Check approval threshold"
+instruction = """
+Check: is the amount greater than 100 USDC (from config: approval_threshold_usdc)?
+If YES → set needs_approval = true
+If NO → set needs_approval = false and skip to generate_url step
+"""
+depends_on = ["parse_request"]
+
+[[steps]]
+id = "approval_gate"
+name = "Human approval for large transaction"
+type = "approval"
+instruction = """
+A payment request for {{amount}} USDC has been received.
+Memo: {{memo}}
+
+Do you approve generating this invoice?
+
+Approve → proceed with invoice generation
+Reject → notify merchant that the invoice was not created
+"""
+depends_on = ["check_threshold"]
+condition = "needs_approval == true"
+timeout_seconds = 300
+
+[[steps]]
+id = "generate_invoice_id"
+name = "Generate invoice ID"
+instruction = """
+Load the current invoice counter from memory key "invoice_counter".
+If it doesn't exist, start at 1.
+Increment by 1 and save back to memory.
+This is the invoice_id for this payment.
+"""
+depends_on = ["check_threshold"]
+
+[[steps]]
+id = "build_solana_pay_url"
+name = "Build Solana Pay URL"
+instruction = """
+Using the solana_pay_url skill:
+
+1. Get the merchant_address from config
+2. Get the usdc_mint from config  
+3. Generate a reference key: compute base58(sha256(invoice_id + current_unix_timestamp))
+   Use the http_request tool to call:
+   POST {{rpc_url}}
+   Body: {"jsonrpc":"2.0","id":1,"method":"getSlot","params":[]}
+   Use the slot number + invoice_id as entropy for the reference key.
+   
+   **Reference key shortcut:** Use the string "<invoice_id>_<timestamp>" padded with zeros to 32 bytes, 
+   then base58-encode. The model should compute this as a deterministic but unique string per invoice.
+
+4. Build the Solana Pay URL:
+   solana:{{merchant_address}}?amount={{amount}}&spl-token={{usdc_mint}}&reference={{reference_key}}&label=Caixa&message={{url_encode(memo)}}%20%E2%80%94%20Invoice%20%23{{invoice_id}}
+
+5. Save to memory:
+   key: "invoice:{{invoice_id}}"
+   value: {"reference_key":"<key>","amount":{{amount}},"memo":"{{memo}}","created_at":"<ISO8601>","status":"pending","channel_sender":"{{sender}}"}
+
+6. Return the URL and reference_key
+"""
+depends_on = ["generate_invoice_id"]
+
+[[steps]]
+id = "post_payment_link"
+name = "Send payment link to merchant"
+instruction = """
+Send the following message to the merchant on the WhatsApp channel:
+
+---
+💳 *Invoice #{{invoice_id}} Created*
+
+Amount: *{{amount}} USDC*
+For: {{memo}}
+
+👇 Share this link with your customer:
+{{solana_pay_url}}
+
+Or scan via Phantom/Backpack wallet.
+Payment will be confirmed automatically within 30 seconds of on-chain settlement.
+---
+
+Also save the message to memory for audit trail.
+"""
+depends_on = ["build_solana_pay_url"]
+
+[[steps]]
+id = "post_confirmation"
+name = "Confirm invoice creation"
+instruction = """
+Log to the agent memory:
+key: "audit:invoice:{{invoice_id}}"
+value: {"event":"created","timestamp":"<ISO8601>","amount":{{amount}},"token":"USDC","memo":"{{memo}}","sender":"{{sender}}"}
+"""
+depends_on = ["post_payment_link"]
