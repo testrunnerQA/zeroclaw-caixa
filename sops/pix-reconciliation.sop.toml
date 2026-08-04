@@ -1,0 +1,75 @@
+# PIX Reconciliation SOP
+# Triggered when merchant requests payment in BRL/PIX, or upon receiving a PIX callback
+
+name = "pix-reconciliation"
+description = "Handles BRL invoicing via PIX and converts/reconciles USDC equivalent on-ledger"
+version = "1"
+
+[trigger]
+type = "channel"
+channel = "whatsapp"
+match_pattern = "pix|brl|reais|cobrar pix|fatura pix"
+
+[[steps]]
+id = "parse_brl_request"
+name = "Parse BRL request amount"
+instruction = """
+Extract BRL amount and payment memo from merchant message.
+If amount is in BRL or token is specified as BRL/PIX:
+  - amount_brl = <float>
+  - memo = <string>
+Else, ask merchant: "Please specify the amount in BRL. Example: 'charge 150 BRL'"
+"""
+
+[[steps]]
+id = "convert_to_usdc"
+name = "BRL to USDC conversion"
+instruction = """
+Query BRL/USD conversion rate via Coingecko or switchboard REST endpoint using http_request:
+GET https://api.coingecko.com/api/v3/simple/price?ids=usd-coin,brazilian-real&vs_currencies=usd
+
+If the API fails, fall back to default rate: 1 BRL = 0.20 USDC.
+Compute:
+  - usdc_equivalent = amount_brl * rate
+Store both values in memory under the invoice object.
+"""
+depends_on = ["parse_brl_request"]
+
+[[steps]]
+id = "generate_pix_payload"
+name = "Generate EMV PIX payload"
+instruction = """
+Generate a unique reference ID (e.g. Ref#<timestamp>).
+Generate static/dynamic PIX EMV payload using merchant PIX key from config.
+Save invoice details to SQLite memory:
+  key: "invoice:pix:{{ref_id}}"
+  value: {
+    "status": "pending",
+    "amount_brl": {{amount_brl}},
+    "amount_usdc": {{usdc_equivalent}},
+    "memo": "{{memo}}",
+    "created_at": "<ISO8601>"
+  }
+"""
+depends_on = ["convert_to_usdc"]
+
+[[steps]]
+id = "send_pix_code"
+name = "Send PIX billing response"
+instruction = """
+Format and send PIX payment request back to WhatsApp channel:
+- Show amount in BRL and estimated USDC credit.
+- Include PIX Copy & Paste string.
+"""
+depends_on = ["generate_pix_payload"]
+
+[[steps]]
+id = "confirm_pix_settlement"
+name = "Reconcile PIX payment"
+instruction = """
+When a webhook webhook trigger (Open Finance PIX payload) confirms receipt of Ref#{{ref_id}}:
+1. Update invoice status to "completed" in memory.
+2. Update merchant balance in ledger: balance = balance + {{usdc_equivalent}}.
+3. Send final "PIX Payment Confirmed & Reconciled" WhatsApp notification to the merchant.
+"""
+depends_on = ["send_pix_code"]
