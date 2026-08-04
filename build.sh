@@ -44,9 +44,9 @@ else
     git -C zeroclaw pull --ff-only
 fi
 
-echo "  Building ZeroClaw with plugin support (this takes 10-20 minutes)..."
-echo "  Command: cargo build --release --features plugins-wasm-cranelift"
-(cd zeroclaw && cargo build --release --features plugins-wasm-cranelift)
+echo "  Building ZeroClaw with plugin & WhatsApp support..."
+echo "  Command: cargo build --release --features plugins-wasm-cranelift,channel-whatsapp-cloud"
+(cd zeroclaw && cargo build --release --features plugins-wasm-cranelift,channel-whatsapp-cloud)
 
 ZEROCLAW_BIN="./zeroclaw/target/release/zeroclaw"
 if [[ -f "$ZEROCLAW_BIN" ]]; then

@@ -2,7 +2,7 @@
 # Copy to agent.toml and fill in your values.
 # ⚠️  NEVER commit agent.toml — it contains real secrets.
 
-[agent]
+[agents.caixa]
 name = "caixa"
 description = "Solana Pay merchant payment terminal — WhatsApp channel"
 model_provider = "groq"

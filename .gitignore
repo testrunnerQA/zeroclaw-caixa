@@ -2,6 +2,7 @@
 
 # ⚠️  NEVER commit these files
 config/agent.toml       # Contains real API keys and secrets
+config/config.toml      # Contains real API keys and secrets
 data/                   # Agent memory database
 *.db                    # SQLite files
 
