@@ -10,6 +10,9 @@ echo ""
 # ── Check prerequisites ───────────────────────────────────────────────────────
 echo "[1/4] Checking prerequisites..."
 
+# Ensure ~/.cargo/bin is in PATH for shell execution
+export PATH="$HOME/.cargo/bin:$PATH"
+
 check_cmd() {
     if ! command -v "$1" &> /dev/null; then
         echo "  ❌ '$1' not found. $2"
@@ -22,11 +25,11 @@ check_cmd cargo "Install Rust: https://rustup.rs/"
 check_cmd git "Install Git from your OS package manager"
 
 # Check wasm32-wasip2 target
-if rustup target list --installed | grep -q "wasm32-wasip2"; then
+if "$HOME/.cargo/bin/rustup" target list --installed 2>/dev/null | grep -q "wasm32-wasip2" || rustup target list --installed 2>/dev/null | grep -q "wasm32-wasip2"; then
     echo "  ✅ wasm32-wasip2 target installed"
 else
     echo "  Installing wasm32-wasip2 target..."
-    rustup target add wasm32-wasip2
+    "$HOME/.cargo/bin/rustup" target add wasm32-wasip2 || rustup target add wasm32-wasip2
 fi
 
 # ── Clone ZeroClaw (if not already present) ───────────────────────────────────

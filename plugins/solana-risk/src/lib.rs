@@ -308,7 +308,7 @@ mod component {
     fn emit(level: LogLevel, action: PluginAction, func: &str, msg: &str, outcome: Option<PluginOutcome>) {
         log_record(
             level,
-            PluginEvent {
+            &PluginEvent {
                 function_name: format!("zeroclaw_solana_risk::{}", func),
                 action,
                 outcome,

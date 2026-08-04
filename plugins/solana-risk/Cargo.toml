@@ -18,7 +18,7 @@ doctest = false
 wit-bindgen = "0.51"
 
 # HTTP via wasi:http — blocking, no sockets
-waki = { version = "0.3", features = ["component"] }
+waki = { version = "0.3" }
 
 # ── Host-target dependencies (tests) ─────────────────────────────────────────
 [dev-dependencies]
