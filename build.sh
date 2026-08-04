@@ -57,9 +57,11 @@ else
     exit 1
 fi
 
-# ── Build the WASM plugin ────────────────────────────────────────────────────
-echo ""
-echo "[3/4] Building solana-risk WASM plugin..."
+# Sync WIT files from ZeroClaw to make sure the interface signatures match exactly
+echo "  Syncing WIT definitions..."
+rm -rf plugins/solana-risk/wit
+mkdir -p plugins/solana-risk/wit
+cp -r zeroclaw/wit/v0/* plugins/solana-risk/wit/
 
 # Generate WIT bindings first
 echo "  Generating WIT bindings..."
