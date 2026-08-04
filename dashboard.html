@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Caixa — Merchant Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #0B0E11;
+            --bg-surface: #151A20;
+            --bg-card: #1E252F;
+            --primary: #9945FF;
+            --primary-glow: rgba(153, 69, 255, 0.4);
+            --secondary: #14F195;
+            --secondary-glow: rgba(20, 241, 149, 0.2);
+            --text-main: #F0F3F6;
+            --text-muted: #8A9CAE;
+            --border: #2C3542;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 2rem;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .logo-section h1 {
+            font-size: 2.2rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .logo-section p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            margin-top: 0.25rem;
+        }
+
+        .network-badge {
+            background-color: var(--secondary-glow);
+            color: var(--secondary);
+            border: 1px solid var(--secondary);
+            padding: 0.4rem 0.8rem;
+            border-radius: 50px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            letter-spacing: 0.05rem;
+            text-transform: uppercase;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 2rem;
+            flex-grow: 1;
+        }
+
+        .sidebar-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .card {
+            background-color: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.8rem;
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            border-color: var(--primary);
+            box-shadow: 0 8px 30px var(--primary-glow);
+            transform: translateY(-2px);
+        }
+
+        .card-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Invoice Creator Form */
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        .form-input {
+            width: 100%;
+            background-color: var(--bg-base);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.8rem;
+            color: var(--text-main);
+            font-family: inherit;
+            font-size: 1rem;
+            transition: border-color 0.2s;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .btn-submit {
+            width: 100%;
+            background: linear-gradient(135deg, var(--primary), #7A22FF);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0.9rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s active;
+            box-shadow: 0 4px 15px rgba(153, 69, 255, 0.3);
+        }
+
+        .btn-submit:hover {
+            opacity: 0.9;
+        }
+
+        /* Stats Cards */
+        .stats-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .stat-box {
+            background-color: var(--bg-card);
+            border-radius: 12px;
+            padding: 1.2rem;
+            text-align: center;
+            border: 1px solid transparent;
+        }
+
+        .stat-val {
+            font-size: 1.6rem;
+            font-weight: 800;
+            margin-top: 0.5rem;
+        }
+
+        .stat-val.green { color: var(--secondary); }
+        .stat-val.purple { color: var(--primary); }
+
+        /* Main Content Panel */
+        .main-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .table-container {
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            padding: 1rem;
+            border-bottom: 2px solid var(--border);
+        }
+
+        td {
+            padding: 1.2rem 1rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.95rem;
+        }
+
+        tr:hover td {
+            background-color: var(--bg-card);
+        }
+
+        .status-pill {
+            display: inline-block;
+            padding: 0.25rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-pill.completed {
+            background-color: rgba(20, 241, 149, 0.15);
+            color: var(--secondary);
+        }
+
+        .status-pill.pending {
+            background-color: rgba(255, 171, 0, 0.15);
+            color: #FFAB00;
+        }
+
+        /* Modal / QR display */
+        .qr-output-section {
+            margin-top: 1.5rem;
+            display: none;
+            text-align: center;
+            border-top: 1px solid var(--border);
+            padding-top: 1.5rem;
+        }
+
+        .qr-link {
+            display: inline-block;
+            margin-top: 1rem;
+            color: var(--secondary);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .qr-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo-section">
+            <h1>🦞 Caixa</h1>
+            <p>Non-custodial Stablecoin Payment Gateway</p>
+        </div>
+        <div class="network-badge">Solana Mainnet</div>
+    </header>
+
+    <div class="dashboard-grid">
+        <div class="sidebar-panel">
+            <div class="card">
+                <div class="card-title">💰 Caixa Ledger Summary</div>
+                <div class="stats-container">
+                    <div class="stat-box">
+                        <div style="font-size: 0.8rem; color: var(--text-muted);">USDC Credited</div>
+                        <div class="stat-val green">$0.00</div>
+                    </div>
+                    <div class="stat-box">
+                        <div style="font-size: 0.8rem; color: var(--text-muted);">PIX Payments</div>
+                        <div class="stat-val purple">R$ 0.00</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">⚡ Quick Invoice Creator</div>
+                <form id="invoice-form" onsubmit="generateInvoice(event)">
+                    <div class="form-group">
+                        <label for="amount">Amount (USDC)</label>
+                        <input type="number" step="0.01" id="amount" class="form-input" placeholder="e.g. 25.00" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="memo">Description / Table</label>
+                        <input type="text" id="memo" class="form-input" placeholder="e.g. Table 4 Dinner" required>
+                    </div>
+                    <button type="submit" class="btn-submit">Create Solana Pay QR</button>
+                </form>
+
+                <div id="qr-section" class="qr-output-section">
+                    <p style="font-size: 0.9rem; color: var(--text-muted);">Invoice created. Share this deep link or scan:</p>
+                    <a id="solana-pay-link" href="#" class="qr-link" target="_blank">Open in Phantom / Backpack</a>
+                    <div id="qr-placeholder" style="margin-top: 1rem; color: var(--text-muted); font-size: 0.8rem;">
+                        [Scan QR to Pay]
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card main-panel">
+            <div class="card-title">📋 Payment Invoices History</div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Invoice ID</th>
+                            <th>Description</th>
+                            <th>Value</th>
+                            <th>Status</th>
+                            <th>Target / Wallet</th>
+                        </tr>
+                    </thead>
+                    <tbody id="invoices-table-body">
+                        <tr>
+                            <td>#001</td>
+                            <td>Example Table Charge</td>
+                            <td>10.00 USDC</td>
+                            <td><span class="status-pill completed">Completed</span></td>
+                            <td>7xKp...908F</td>
+                        </tr>
+                        <tr>
+                            <td>#002</td>
+                            <td>BRL PIX Conversion</td>
+                            <td>R$ 150.00 (~30 USDC)</td>
+                            <td><span class="status-pill pending">Pending</span></td>
+                            <td>Ledger Credited</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function generateInvoice(event) {
+            event.preventDefault();
+            const amount = document.getElementById('amount').value;
+            const memo = encodeURIComponent(document.getElementById('memo').value);
+            const mockRefKey = "7xKpRmNvBs3qWfYjHdLtA8Ceu2NoPdWmXsKyZbQrT9j"; // static for mockup
+            
+            // Build Solana Pay URL
+            const solanaPayUrl = `solana:9YourMerchantAddressHere?amount=${amount}&spl-token=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&reference=${mockRefKey}&label=Caixa&message=${memo}`;
+            
+            // Format QR wallet deep link
+            const deepLink = `https://solana-pay.vercel.app/?url=${encodeURIComponent(solanaPayUrl)}`;
+            
+            document.getElementById('solana-pay-link').href = deepLink;
+            document.getElementById('qr-section').style.display = 'block';
+
+            // Add new pending row to dashboard table
+            const table = document.getElementById('invoices-table-body');
+            const newRow = document.createElement('tr');
+            newRow.innerHTML = `
+                <td>#${Math.floor(Math.random() * 900) + 100}</td>
+                <td>${document.getElementById('memo').value}</td>
+                <td>${amount} USDC</td>
+                <td><span class="status-pill pending">Pending</span></td>
+                <td>${mockRefKey.substring(0, 4)}...${mockRefKey.substring(mockRefKey.length - 4)}</td>
+            `;
+            table.insertBefore(newRow, table.firstChild);
+        }
+    </script>
+</body>
+</html>
