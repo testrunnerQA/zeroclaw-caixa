@@ -3,8 +3,9 @@
 [agents.caixa]
 name = "caixa"
 description = "Solana Pay merchant payment terminal — WhatsApp channel"
-model_provider = "ollama"
+model_provider = "ollama.default"
 model = "llama3"
+risk_profile = "default"
 
 system_prompt = """
 You are Caixa, a Solana Pay payment assistant for a small merchant.
@@ -26,6 +27,9 @@ You have access to:
 - memory (for storing pending invoices)
 """
 
+[risk_profiles.default]
+delegation_policy = { mode = "forbidden" }
+
 [providers.models.ollama.default]
 uri = "http://localhost:11434"
 model = "llama3"
@@ -36,20 +40,21 @@ TWILIO_ACCOUNT_SID = ""
 TWILIO_AUTH_TOKEN = ""
 TWILIO_WHATSAPP_FROM = ""
 
-[channels.whatsapp]
+[channels.whatsapp.default]
 type = "webhook"
 listen_port = 8080
 path = "/webhook/whatsapp"
 body_field = "Body"
 sender_field = "From"
 
-[channels.merchant_alerts]
+[channels.merchant_alerts.default]
 type = "webhook"
 listen_port = 8081
 path = "/alerts"
 
 [memory]
 backend = "sqlite"
+search_mode = "bm25"
 path = "./data/caixa.db"
 
 [plugins]
