@@ -1,0 +1,77 @@
+# ZeroClaw Agent Configuration — Caixa Merchant Terminal
+
+[agents.caixa]
+name = "caixa"
+description = "Solana Pay merchant payment terminal — WhatsApp channel"
+model_provider = "ollama"
+model = "llama3"
+
+system_prompt = """
+You are Caixa, a Solana Pay payment assistant for a small merchant.
+Your job:
+1. When a merchant sends a payment request (e.g. "charge table 4, 25 USDC"), 
+   generate a Solana Pay link using the solana_pay_url skill.
+2. Post the link back to the merchant channel with clear instructions.
+3. When the payment-poll SOP reports a confirmed payment, format and send a receipt.
+4. NEVER move funds. NEVER ask for private keys. NEVER sign transactions.
+5. Any request to "refund", "send", "transfer", or "withdraw" MUST be routed 
+   to an approval checkpoint — do not fulfill these autonomously.
+6. Always declare what you are doing and why.
+
+You have access to:
+- solana_pay_url skill (constructs Solana Pay URLs)
+- payment_confirm skill (interprets RPC confirmation data)
+- receipt_format skill (formats merchant receipts)
+- http_request tool (for Solana RPC calls and RugCheck API)
+- memory (for storing pending invoices)
+"""
+
+[providers.models.ollama.default]
+uri = "http://localhost:11434"
+model = "llama3"
+
+[secrets]
+HELIUS_API_KEY = "13bd4b45-b828-47e4-bb87-d2e42d1ca5b6"
+TWILIO_ACCOUNT_SID = ""
+TWILIO_AUTH_TOKEN = ""
+TWILIO_WHATSAPP_FROM = ""
+
+[channels.whatsapp]
+type = "webhook"
+listen_port = 8080
+path = "/webhook/whatsapp"
+body_field = "Body"
+sender_field = "From"
+
+[channels.merchant_alerts]
+type = "webhook"
+listen_port = 8081
+path = "/alerts"
+
+[memory]
+backend = "sqlite"
+path = "./data/caixa.db"
+
+[plugins]
+enabled = true
+
+[[plugins.tools]]
+name = "solana_risk_check"
+path = "./plugins/solana-risk/target/wasm32-wasip2/release/zeroclaw_solana_risk.wasm"
+permissions = ["http_client", "config_read"]
+
+[solana]
+rpc_url = "https://mainnet.helius-rpc.com/?api-key=13bd4b45-b828-47e4-bb87-d2e42d1ca5b6"
+rpc_wss_url = "wss://mainnet.helius-rpc.com/?api-key=13bd4b45-b828-47e4-bb87-d2e42d1ca5b6"
+network = "mainnet"
+
+usdc_mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+usdt_mint = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
+merchant_address = ""
+approval_threshold_usdc = 100
+
+[sops]
+directory = "./sops"
+
+[skills]
+directory = "./skills"
