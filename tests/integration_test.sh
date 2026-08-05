@@ -6,10 +6,10 @@
 set -euo pipefail
 
 HELIUS_KEY="${HELIUS_API_KEY:-}"
-MERCHANT_ADDR="${CAIXA_MERCHANT_ADDR:-}"
+MERCHANT_ADDR="${MERCHANT_WALLET:-${CAIXA_MERCHANT_ADDR:-}}"
 
 if [[ -z "$HELIUS_KEY" ]] || [[ -z "$MERCHANT_ADDR" ]]; then
-    echo "ERROR: Set HELIUS_API_KEY and CAIXA_MERCHANT_ADDR environment variables"
+    echo "ERROR: Set HELIUS_API_KEY and MERCHANT_WALLET (or CAIXA_MERCHANT_ADDR) environment variables"
     exit 1
 fi
 
