@@ -125,8 +125,16 @@ function buildPayLink(payUrl) {
 
 // ── Parse charge command ──────────────────────────────────────────────────
 function parseCharge(text) {
-  const m = text.match(/charge\s+table\s+(\d+)[,\s]+(\d+(?:\.\d+)?)\s*usdc/i);
-  if (m) return { table: m[1], amount: m[2] };
+  // Match: "charge <description>, <amount> usdc"  (comma optional)
+  // Examples: "charge table 4, 0.01 usdc"
+  //           "charge table 4 seat 2, 4 USDC"
+  //           "charge VIP lounge, 50 USDC"
+  const m = text.match(/charge\s+(.+?)[\s,]+([\d.]+)\s*usdc/i);
+  if (m) {
+    const label  = m[1].trim().replace(/,\s*$/, ""); // strip trailing comma
+    const amount = m[2];
+    if (parseFloat(amount) > 0 && label.length > 0) return { table: label, amount };
+  }
   return null;
 }
 
@@ -439,23 +447,26 @@ a.btn{display:inline-block;padding:16px 32px;background:#9945FF;color:#fff;borde
         if (charge) {
           const invoiceId  = invoiceCounter++;
           const refKey     = generateReferenceKey();
-          const payUrl     = buildSolanaPayUrl(charge.amount, charge.table, refKey);
+          // Normalize table label: "4" → "Table 4", "Table 4" stays as-is
+          const tableLabel = String(charge.table).toLowerCase().startsWith("table")
+            ? charge.table : `Table ${charge.table}`;
+          const payUrl     = buildSolanaPayUrl(charge.amount, tableLabel, refKey);
           const qrUrl      = buildQrProxyUrl(payUrl);
           const tapLink    = buildPayLink(payUrl);
 
           // Register invoice for polling
           pendingInvoices.set(refKey, {
-            invoiceId, table: charge.table, amount: charge.amount,
+            invoiceId, table: tableLabel, amount: charge.amount,
             payUrl, from, createdAt: Date.now()
           });
 
-          console.log(`[adapter] 💳 Invoice #${invoiceId} — Table ${charge.table} → ${charge.amount} USDC`);
+          console.log(`[adapter] 💳 Invoice #${invoiceId} — ${tableLabel} → ${charge.amount} USDC`);
           console.log(`[adapter] 🔑 Reference: ${refKey.slice(0, 12)}...`);
           console.log(`[adapter] 🔗 ${payUrl.slice(0, 80)}...`);
           console.log(`[adapter] ⏳ Polling for payment every ${POLL_INTERVAL/1000}s (${pendingInvoices.size} active)`);
 
           const pending  = flushNotifications(from);
-          const text = `${pending}🧾 Invoice #${invoiceId} — Caixa\n\nTable: ${charge.table}\nAmount: ${charge.amount} USDC\n\n👆 Tap to pay:\n${tapLink}\n\n(Or scan QR above with Phantom / Solflare)`;
+          const text = `${pending}🧾 Invoice #${invoiceId} — Caixa\n\n${tableLabel}\nAmount: ${charge.amount} USDC\n\n👆 Tap to pay:\n${tapLink}\n\n(Or scan QR above with Phantom / Solflare)`;
           const esc  = text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
           const mediaTag = qrUrl ? `<Media>${qrUrl}</Media>` : "";
 
