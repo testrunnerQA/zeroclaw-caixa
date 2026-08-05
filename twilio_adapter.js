@@ -449,11 +449,20 @@ a.btn{display:inline-block;padding:16px 32px;background:#9945FF;color:#fff;borde
         if (charge) {
           const invoiceId  = invoiceCounter++;
           const refKey     = generateReferenceKey();
-          // Normalize table label: capitalize first letter, prepend "Table" only if missing
+          // Normalize label:
+          // "4"           → "Table 4"         (bare number only)
+          // "table 4"     → "Table 4"         (capitalize existing "table")
+          // "VIP lounge"  → "VIP lounge"      (custom desc, keep as-is)
+          // "Daniel"      → "Daniel"           (person/name, keep as-is)
           const rawLabel = String(charge.table).trim();
-          const tableLabel = rawLabel.toLowerCase().startsWith("table")
-            ? rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1)
-            : `Table ${rawLabel}`;
+          let tableLabel;
+          if (/^\d+$/.test(rawLabel)) {
+            tableLabel = `Table ${rawLabel}`;                                    // bare number → Table N
+          } else if (rawLabel.toLowerCase().startsWith("table")) {
+            tableLabel = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);  // "table 4" → "Table 4"
+          } else {
+            tableLabel = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);  // capitalize first letter only
+          }
           const payUrl     = buildSolanaPayUrl(charge.amount, tableLabel, refKey);
           const qrUrl      = buildQrProxyUrl(payUrl);
           const tapLink    = buildPayLink(payUrl);
