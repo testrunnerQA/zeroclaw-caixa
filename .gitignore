@@ -1,8 +1,6 @@
 # Git ignore file for Caixa — ZeroClaw Solana Pay agent
 
-# ⚠️  NEVER commit these files — contain real API keys and secrets
-config/agent.toml
-config/config.toml
+# ⚠️  NEVER commit real secrets. Config files below use environment variables
 config/.secret_key
 
 # ZeroClaw runtime data — agent memory, sessions, state

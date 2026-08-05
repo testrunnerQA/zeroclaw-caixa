@@ -304,8 +304,8 @@ zeroclaw-caixa/
 +-- dashboard.html         # Merchant UI - invoice history + QR display
 +-- .env.example           # Environment variable template (safe to commit)
 +-- config/
-|   +-- config.toml.example  # ZeroClaw daemon config template
-|   +-- config.toml          # your local config (gitignored)
+|   +-- config.toml        # ZeroClaw daemon config (tracked, uses .env variables)
+|   +-- agent.toml         # ZeroClaw agent config (tracked, uses .env variables)
 +-- skills/                # ZeroClaw skill definitions
 +-- sops/                  # ZeroClaw SOP definitions
 +-- tests/                 # Integration tests
