@@ -13,11 +13,12 @@ The merchant texts WhatsApp. The agent replies with a Solana Pay QR. The custome
 Merchant  WhatsApp: "charge table 4, 25 USDC"
 Agent     WhatsApp:  QR image + tap-to-pay link
 Customer  Phantom:  scans QR -> approves -> pays on-chain
-Agent     Terminal: PAYMENT DETECTED - Invoice #1
-Agent     WhatsApp: Invoice #1 paid! 25 USDC | Tx: solscan.io/tx/...
+Agent     Terminal: PAYMENT DETECTED - Invoice #1 (confirmation queued)
+Merchant  WhatsApp: "status"
+Agent     WhatsApp: "Invoice #1 paid! 25 USDC | Tx: solscan.io/tx/..."
 ```
 
-The confirmation arrives on WhatsApp as soon as the merchant sends any follow-up message (e.g. "status") - delivered via TwiML response queue, bypassing Twilio outbound template requirements entirely.
+Payment confirmation is queued on detection and delivered via TwiML the next time the merchant sends **any** WhatsApp message (e.g. "status", "hi", a new charge command). This bypasses Twilio's ContentSid requirement for outbound REST API messages — no paid account needed.
 
 ---
 
@@ -176,7 +177,7 @@ You receive a WhatsApp message with:
 - QR code image - scan with Phantom on **another device**
 - Tap-to-pay link - opens wallet directly on the **same device**
 
-After payment, send any message (e.g. `status`) to receive the confirmation:
+After payment, send **any** WhatsApp message (e.g. `status`) to trigger confirmation delivery:
 
 ```
 Invoice #1 paid!
@@ -184,6 +185,9 @@ Table: Table 4
 Amount: 0.01 USDC
 https://solscan.io/tx/...
 ```
+
+> **Why?** Twilio sandbox blocks unsolicited outbound messages. Caixa queues the
+> confirmation and delivers it as the reply to your next message — no paid plan required.
 
 ### Via Dashboard
 
