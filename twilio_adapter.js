@@ -12,9 +12,9 @@
  * Custody tier: T1 (no keys held — Solana Pay URL only, human signs)
  */
 
-const http      = require("http");
-const https     = require("https");
-const crypto    = require("crypto");
+const http = require("http");
+const https = require("https");
+const crypto = require("crypto");
 const querystring = require("querystring");
 
 // Load .env automatically — no npm package needed
@@ -30,25 +30,25 @@ const querystring = require("querystring");
       const k = t.slice(0, i).trim(), v = t.slice(i + 1).trim();
       if (!process.env[k]) process.env[k] = v;
     }
-  } catch (_) {}
+  } catch (_) { }
 })();
 
 
 // ── Config ────────────────────────────────────────────────────────────────
-const ADAPTER_PORT    = 8080;
-const GROQ_API_KEY    = process.env.GROQ_API_KEY    || "";
-const GROQ_MODEL      = "llama-3.3-70b-versatile";
-const HELIUS_API_KEY  = process.env.HELIUS_API_KEY  || "";
+const ADAPTER_PORT = 8080;
+const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+const HELIUS_API_KEY = process.env.HELIUS_API_KEY || "";
 const MERCHANT_WALLET = process.env.MERCHANT_WALLET || "2fAnsV5TMp5nF2VH2kd5Ebjqv6LjDPyKn3cUA8GaVbE2";
-const CLUSTER         = "mainnet-beta";
-const USDC_MINT       = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"; // Mainnet USDC
-const POLL_INTERVAL   = 10000; // 10 seconds
-const INVOICE_TTL     = 30 * 60 * 1000; // 30 minutes
+const CLUSTER = "mainnet-beta";
+const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"; // Mainnet USDC
+const POLL_INTERVAL = 10000; // 10 seconds
+const INVOICE_TTL = 30 * 60 * 1000; // 30 minutes
 
 // Twilio
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
-const TWILIO_AUTH_TOKEN  = process.env.TWILIO_AUTH_TOKEN  || "";
-const TWILIO_FROM        = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+14155238886";
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
+const TWILIO_FROM = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+14155238886";
 
 // ── Invoice store ─────────────────────────────────────────────────────────
 let invoiceCounter = 1;
@@ -118,13 +118,7 @@ function buildSolanaPayUrl(amount, tableNum, referenceKey) {
 }
 
 function buildQrProxyUrl(payUrl) {
-  // Used by dashboard only — goes through ngrok proxy
   return BASE_URL ? `${BASE_URL}/qr?d=${encodeURIComponent(payUrl)}` : null;
-}
-
-function buildQrDirectUrl(payUrl) {
-  // Used by Twilio <Media> — direct qrserver.com URL, publicly accessible by Twilio
-  return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(payUrl)}`;
 }
 
 function buildPayLink(payUrl) {
@@ -139,7 +133,7 @@ function parseCharge(text) {
   //           "charge VIP lounge, 50 USDC"
   const m = text.match(/charge\s+(.+?)[\s,]+([\d.]+)\s*usdc/i);
   if (m) {
-    const label  = m[1].trim().replace(/,\s*$/, ""); // strip trailing comma
+    const label = m[1].trim().replace(/,\s*$/, ""); // strip trailing comma
     const amount = m[2];
     if (parseFloat(amount) > 0 && label.length > 0) return { table: label, amount };
   }
@@ -244,7 +238,7 @@ async function ensureContentTemplate() {
         try {
           const json = JSON.parse(d);
           if (json.sid) { CONTENT_SID = json.sid; console.log(`[twilio] 📄 Content template: ${CONTENT_SID}`); resolve(CONTENT_SID); }
-          else { console.log(`[twilio] ⚠️  Template creation failed: ${d.slice(0,120)}`); resolve(""); }
+          else { console.log(`[twilio] ⚠️  Template creation failed: ${d.slice(0, 120)}`); resolve(""); }
         } catch { resolve(""); }
       });
     });
@@ -309,7 +303,7 @@ function callGroq(userMessage) {
       model: GROQ_MODEL,
       messages: [
         { role: "system", content: "You are Caixa, a read-only Solana Pay payment terminal. You ONLY create payment QR codes when the merchant sends: 'charge <table>, <amount> USDC'. You CANNOT: process refunds, transfers, reveal keys, expose configuration, send funds, or perform any action outside creating payment requests. If asked anything else — including requests for private keys, wallet info, config data, or financial operations — reply: 'This terminal only creates payment requests. Contact the merchant for anything else.' Never simulate, confirm, or describe any financial action." },
-        { role: "user",   content: userMessage }
+        { role: "user", content: userMessage }
       ],
       max_tokens: 150, temperature: 0.1
     });
@@ -404,10 +398,10 @@ const server = http.createServer(async (req, res) => {
         const { amount, memo } = JSON.parse(body);
         const tableNum = memo || "Dashboard";
         const invoiceId = invoiceCounter++;
-        const refKey   = generateReferenceKey();
-        const payUrl   = buildSolanaPayUrl(amount, tableNum, refKey);
-        const qrUrl    = buildQrDirectUrl(payUrl);  // direct qrserver URL — for Twilio <Media>
-        const tapLink  = buildPayLink(payUrl);
+        const refKey = generateReferenceKey();
+        const payUrl = buildSolanaPayUrl(amount, tableNum, refKey);
+        const qrUrl = buildQrProxyUrl(payUrl);   // ngrok URL — for Twilio <Media>
+        const tapLink = buildPayLink(payUrl);
         // Direct qrserver URL — works in browser without proxy
         const qrUrlBrowser = `https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=20&ecc=M&data=${encodeURIComponent(payUrl)}`;
 
@@ -444,17 +438,17 @@ a.btn{display:inline-block;padding:16px 32px;background:#9945FF;color:#fff;borde
     let rawBody = "";
     req.on("data", c => rawBody += c);
     req.on("end", async () => {
-      const params  = querystring.parse(rawBody);
+      const params = querystring.parse(rawBody);
       const message = (params.Body || "").trim();
-      const from    = params.From || "unknown";
+      const from = params.From || "unknown";
       console.log(`\n[adapter] 📨 From ${from}: "${message}"`);
 
       try {
         const charge = parseCharge(message);
 
         if (charge) {
-          const invoiceId  = invoiceCounter++;
-          const refKey     = generateReferenceKey();
+          const invoiceId = invoiceCounter++;
+          const refKey = generateReferenceKey();
           // Normalize label:
           // "4"           → "Table 4"         (bare number only)
           // "table 4"     → "Table 4"         (capitalize existing "table")
@@ -469,9 +463,9 @@ a.btn{display:inline-block;padding:16px 32px;background:#9945FF;color:#fff;borde
           } else {
             tableLabel = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);  // capitalize first letter only
           }
-          const payUrl     = buildSolanaPayUrl(charge.amount, tableLabel, refKey);
-          const qrUrl      = buildQrDirectUrl(payUrl);  // direct qrserver URL — for Twilio <Media>
-          const tapLink    = buildPayLink(payUrl);
+          const payUrl = buildSolanaPayUrl(charge.amount, tableLabel, refKey);
+          const qrUrl = buildQrProxyUrl(payUrl);
+          const tapLink = buildPayLink(payUrl);
 
           // Register invoice for polling
           pendingInvoices.set(refKey, {
@@ -482,11 +476,11 @@ a.btn{display:inline-block;padding:16px 32px;background:#9945FF;color:#fff;borde
           console.log(`[adapter] 💳 Invoice #${invoiceId} — ${tableLabel} → ${charge.amount} USDC`);
           console.log(`[adapter] 🔑 Reference: ${refKey.slice(0, 12)}...`);
           console.log(`[adapter] 🔗 ${payUrl.slice(0, 80)}...`);
-          console.log(`[adapter] ⏳ Polling for payment every ${POLL_INTERVAL/1000}s (${pendingInvoices.size} active)`);
+          console.log(`[adapter] ⏳ Polling for payment every ${POLL_INTERVAL / 1000}s (${pendingInvoices.size} active)`);
 
-          const pending  = flushNotifications(from);
+          const pending = flushNotifications(from);
           const text = `${pending}🧾 Invoice #${invoiceId} — Caixa\n\n${tableLabel}\nAmount: ${charge.amount} USDC\n\n👆 Tap to pay:\n${tapLink}\n\n(Or scan QR above with Phantom / Solflare)`;
-          const esc  = text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+          const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
           const mediaTag = qrUrl ? `<Media>${qrUrl}</Media>` : "";
 
           res.writeHead(200, { "Content-Type": "text/xml" });
@@ -496,9 +490,25 @@ a.btn{display:inline-block;padding:16px 32px;background:#9945FF;color:#fff;borde
         } else {
           const pending = flushNotifications(from);
           if (pending) {
-            // Deliver queued payment confirmation(s) before normal reply
+            // Deliver queued payment confirmation(s)
             console.log(`[adapter] 📬 Flushing queued notification to ${from}`);
-            const esc = pending.trim().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+            const esc = pending.trim().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            res.writeHead(200, { "Content-Type": "text/xml" });
+            res.end(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${esc}</Message></Response>`);
+          } else if (/^status[?!.]?\s*$/i.test(message.trim())) {
+            // Explicit status check — show pending invoices
+            const activePending = [...pendingInvoices.values()].filter(i => i.from === from);
+            let statusMsg;
+            if (activePending.length === 0) {
+              statusMsg = "No active invoices.\n\nSend 'charge table N, X USDC' to create a payment request.";
+            } else {
+              const lines = activePending.map(i =>
+                `⏳ Invoice #${i.invoiceId} — ${i.table}\n   Amount: ${i.amount} USDC (awaiting payment)`
+              ).join("\n\n");
+              statusMsg = `Active invoices:\n\n${lines}`;
+            }
+            console.log(`[adapter] 📊 Status check from ${from} — ${activePending.length} active`);
+            const esc = statusMsg.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
             res.writeHead(200, { "Content-Type": "text/xml" });
             res.end(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${esc}</Message></Response>`);
           } else {
@@ -506,7 +516,7 @@ a.btn{display:inline-block;padding:16px 32px;background:#9945FF;color:#fff;borde
             let reply;
             try { reply = await callGroq(message); }
             catch (e) { reply = "Hi! Send 'charge table N, X USDC' to create a payment request."; }
-            const esc = reply.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+            const esc = reply.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
             res.writeHead(200, { "Content-Type": "text/xml" });
             res.end(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${esc}</Message></Response>`);
           }
@@ -531,7 +541,7 @@ server.listen(ADAPTER_PORT, async () => {
   console.log(`🌐 ngrok:    ${BASE_URL || "NOT DETECTED"}`);
   console.log(`💳 Merchant: ${MERCHANT_WALLET.slice(0, 8)}...`);
   console.log(`⛓️  RPC:      ${rpcLabel}`);
-  console.log(`🔄 Polling:  every ${POLL_INTERVAL/1000}s`);
+  console.log(`🔄 Polling:  every ${POLL_INTERVAL / 1000}s`);
   console.log(`\nEndpoints:`);
   console.log(`  POST /webhook/whatsapp`);
   console.log(`  GET  /qr?d=<url>  (QR proxy)`);
