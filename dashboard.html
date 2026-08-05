@@ -382,7 +382,7 @@
             qrLink.textContent = `Open Invoice #${inv.invoiceId} in Wallet`;
             qrLink.style.display = 'inline-block';
             qrHolder.innerHTML = inv.qrUrl
-                ? `<img src="${inv.qrUrl}" style="width:220px;height:220px;border-radius:12px;margin-top:0.5rem;" alt="Scan to Pay" onerror="this.outerHTML='<p style=color:var(--text-muted)>QR unavailable</p>'">`
+                ? `<img src="${inv.qrUrl}" style="width:280px;height:280px;border-radius:12px;margin-top:0.5rem;" alt="Scan to Pay" onerror="this.outerHTML='<p style=color:var(--text-muted)>QR unavailable</p>'">`
                 : `<p style="color:var(--text-muted);font-size:0.8rem">${(inv.payUrl||'').slice(0,80)}...</p>`;
         }
 

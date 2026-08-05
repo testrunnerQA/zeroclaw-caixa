@@ -55,6 +55,23 @@ let invoiceCounter = 1;
 // Map<referenceKey (base58) → { invoiceId, table, amount, from, createdAt }>
 const pendingInvoices = new Map();
 
+// ── Pending WhatsApp notifications (delivered on next inbound message) ─────
+// Map<whatsapp_number → string[]>
+const pendingNotifications = new Map();
+
+function queueNotification(to, msg) {
+  const q = pendingNotifications.get(to) || [];
+  q.push(msg);
+  pendingNotifications.set(to, q);
+}
+
+function flushNotifications(from) {
+  const q = pendingNotifications.get(from);
+  if (!q || q.length === 0) return "";
+  pendingNotifications.delete(from);
+  return q.join("\n\n---\n\n") + "\n\n";
+}
+
 // ── Base58 encoder (for reference keys — no npm needed) ───────────────────
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 function base58Encode(buf) {
@@ -90,10 +107,9 @@ function fetchNgrokUrl() {
 
 // ── URL builders ──────────────────────────────────────────────────────────
 function buildSolanaPayUrl(amount, tableNum, referenceKey) {
-  const label = encodeURIComponent(`Caixa Table ${tableNum}`);
-  const msg   = encodeURIComponent(`Invoice #${invoiceCounter} · Table ${tableNum} · ${amount} USDC`);
-  let url = `solana:${MERCHANT_WALLET}?amount=${amount}&spl-token=${USDC_MINT}&label=${label}&message=${msg}&reference=${referenceKey}`;
-  if (CLUSTER === "devnet") url += "&cluster=devnet";
+  // Bare minimum Solana Pay URL — spaces as %20 (not +) for wallet QR scanner compatibility
+  const url = `solana:${MERCHANT_WALLET}?amount=${amount}&spl-token=${USDC_MINT}&reference=${referenceKey}&label=Caixa%20Table%20${tableNum}`;
+  console.log(`[pay-url] ${url}`);
   return url;
 }
 
@@ -182,21 +198,64 @@ async function checkPendingPayments() {
 
 setInterval(checkPendingPayments, POLL_INTERVAL);
 
+// ── Twilio Content template (created once, cached) ────────────────────────
+let CONTENT_SID = process.env.TWILIO_CONTENT_SID || "";
+
+async function ensureContentTemplate() {
+  if (CONTENT_SID) return CONTENT_SID;
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) return "";
+  // Create a free-form twilio/text template
+  const payload = JSON.stringify({
+    friendly_name: "caixa_payment_confirm",
+    language: "en",
+    types: { "twilio/text": { body: "{{1}}" } }
+  });
+  const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64");
+  return new Promise((resolve) => {
+    const req = https.request({
+      hostname: "content.twilio.com",
+      path: "/v1/Content",
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Basic ${auth}`, "Content-Length": Buffer.byteLength(payload) }
+    }, (res) => {
+      let d = ""; res.on("data", c => d += c);
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(d);
+          if (json.sid) { CONTENT_SID = json.sid; console.log(`[twilio] 📄 Content template: ${CONTENT_SID}`); resolve(CONTENT_SID); }
+          else { console.log(`[twilio] ⚠️  Template creation failed: ${d.slice(0,120)}`); resolve(""); }
+        } catch { resolve(""); }
+      });
+    });
+    req.on("error", () => resolve(""));
+    req.write(payload); req.end();
+  });
+}
+
 // ── Send outbound WhatsApp via Twilio API ──────────────────────────────────
-function sendWhatsApp(to, body) {
+async function sendWhatsApp(to, body) {
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) throw new Error("Twilio creds not set");
+  const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64");
+  const sid = await ensureContentTemplate();
+  let form;
+  if (sid) {
+    // Use ContentSid template (required by Twilio WhatsApp 2025)
+    form = querystring.stringify({
+      From: TWILIO_FROM, To: to,
+      ContentSid: sid,
+      ContentVariables: JSON.stringify({ "1": body })
+    });
+  } else {
+    // Fallback: plain Body (may fail on WhatsApp sandbox)
+    form = querystring.stringify({ From: TWILIO_FROM, To: to, Body: body });
+  }
   return new Promise((resolve, reject) => {
-    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
-      reject(new Error("Twilio creds not set")); return;
-    }
-    const form = querystring.stringify({ From: TWILIO_FROM, To: to, Body: body });
-    const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64");
-    const opts = {
+    const req = https.request({
       hostname: "api.twilio.com",
       path: `/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", "Authorization": `Basic ${auth}`, "Content-Length": Buffer.byteLength(form) }
-    };
-    const req = https.request(opts, (res) => {
+    }, (res) => {
       let d = ""; res.on("data", c => d += c);
       res.on("end", () => {
         const json = JSON.parse(d);
@@ -208,17 +267,24 @@ function sendWhatsApp(to, body) {
   });
 }
 
+
 async function sendPaymentConfirmation(invoice, signature) {
   const explorerUrl = `https://solscan.io/tx/${signature}`;
-  const msg = `✅ Invoice #${invoice.invoiceId} paid!\n\nTable: ${invoice.table}\nAmount: ${invoice.amount} USDC\n\nTx: ${explorerUrl}`;
-  console.log(`[poll] 📤 Sending confirmation to ${invoice.from}...`);
+  const msg = `✅ Invoice #${invoice.invoiceId} paid!\n\nTable: ${invoice.table}\nAmount: ${invoice.amount} USDC\n\n🔗 ${explorerUrl}`;
+
+  // Try Twilio REST API first (works with dedicated WhatsApp number)
   try {
     await sendWhatsApp(invoice.from, msg);
     console.log(`[poll] ✅ Merchant notified on WhatsApp`);
-  } catch (e) {
-    console.log(`[poll] ⚠️  WhatsApp outbound blocked (${e.message.slice(0, 60)})`);
-    console.log(`[poll] 📋 Confirmation (show in video):\n${msg}`);
+    return;
+  } catch (_) {}
+
+  // Fallback: queue for delivery on merchant's next inbound message
+  if (invoice.from && invoice.from.startsWith("whatsapp:")) {
+    queueNotification(invoice.from, msg);
+    console.log(`[poll] 📬 Confirmation queued for ${invoice.from} — will deliver on next message`);
   }
+  console.log(`[poll] 📋 Confirmation:\n${msg}`);
 }
 
 // ── Groq LLM call ─────────────────────────────────────────────────────────
@@ -245,7 +311,7 @@ function callGroq(userMessage) {
 
 // ── Proxy: fetch QR image and pipe through our server ─────────────────────
 function proxyQrImage(payUrl, res) {
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=10&data=${encodeURIComponent(payUrl)}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=20&ecc=M&data=${encodeURIComponent(payUrl)}`;
   https.get(qrUrl, (img) => {
     if (img.statusCode !== 200) { res.writeHead(502); res.end("QR fetch failed"); return; }
     res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=60" });
@@ -299,7 +365,7 @@ const server = http.createServer(async (req, res) => {
     const list = [];
     for (const [refKey, inv] of pendingInvoices) {
       const qrUrl = inv.payUrl
-        ? `https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=10&data=${encodeURIComponent(inv.payUrl)}`
+        ? `https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=20&ecc=M&data=${encodeURIComponent(inv.payUrl)}`
         : null;
       const tapLink = inv.payUrl ? buildPayLink(inv.payUrl) : null;
       list.push({ ...inv, refKey: refKey.slice(0, 8) + "...", qrUrl, tapLink });
@@ -323,7 +389,7 @@ const server = http.createServer(async (req, res) => {
         const qrUrl    = buildQrProxyUrl(payUrl);   // ngrok URL — for Twilio <Media>
         const tapLink  = buildPayLink(payUrl);
         // Direct qrserver URL — works in browser without proxy
-        const qrUrlBrowser = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=10&data=${encodeURIComponent(payUrl)}`;
+        const qrUrlBrowser = `https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=20&ecc=M&data=${encodeURIComponent(payUrl)}`;
 
         pendingInvoices.set(refKey, {
           invoiceId, table: tableNum, amount, payUrl, from: "dashboard", createdAt: Date.now()
@@ -384,22 +450,32 @@ a.btn{display:inline-block;padding:16px 32px;background:#9945FF;color:#fff;borde
           console.log(`[adapter] 🔗 ${payUrl.slice(0, 80)}...`);
           console.log(`[adapter] ⏳ Polling for payment every ${POLL_INTERVAL/1000}s (${pendingInvoices.size} active)`);
 
-          const text = `🧾 Invoice #${invoiceId} — Caixa\n\nTable: ${charge.table}\nAmount: ${charge.amount} USDC\n\n👆 Tap to pay:\n${tapLink}\n\n(Or scan QR above with Phantom / Solflare)`;
+          const pending  = flushNotifications(from);
+          const text = `${pending}🧾 Invoice #${invoiceId} — Caixa\n\nTable: ${charge.table}\nAmount: ${charge.amount} USDC\n\n👆 Tap to pay:\n${tapLink}\n\n(Or scan QR above with Phantom / Solflare)`;
           const esc  = text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
           const mediaTag = qrUrl ? `<Media>${qrUrl}</Media>` : "";
 
           res.writeHead(200, { "Content-Type": "text/xml" });
           res.end(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${esc}${mediaTag}</Message></Response>`);
-          console.log(`[adapter] ✅ Reply sent${qrUrl ? " with QR" : ""}`);
+          console.log(`[adapter] ✅ Reply sent${qrUrl ? " with QR" : ""}${pending ? " + queued notification" : ""}`);
 
         } else {
-          console.log(`[adapter] 🤖 Groq...`);
-          let reply;
-          try { reply = await callGroq(message); }
-          catch (e) { reply = "Hi! Send 'charge table N, X USDC' to create a payment request."; }
-          const esc = reply.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-          res.writeHead(200, { "Content-Type": "text/xml" });
-          res.end(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${esc}</Message></Response>`);
+          const pending = flushNotifications(from);
+          if (pending) {
+            // Deliver queued payment confirmation(s) before normal reply
+            console.log(`[adapter] 📬 Flushing queued notification to ${from}`);
+            const esc = pending.trim().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+            res.writeHead(200, { "Content-Type": "text/xml" });
+            res.end(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${esc}</Message></Response>`);
+          } else {
+            console.log(`[adapter] 🤖 Groq...`);
+            let reply;
+            try { reply = await callGroq(message); }
+            catch (e) { reply = "Hi! Send 'charge table N, X USDC' to create a payment request."; }
+            const esc = reply.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+            res.writeHead(200, { "Content-Type": "text/xml" });
+            res.end(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${esc}</Message></Response>`);
+          }
         }
       } catch (err) {
         console.error(`[adapter] ❌ ${err.message}`);
