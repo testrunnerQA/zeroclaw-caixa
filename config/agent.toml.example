@@ -1,0 +1,65 @@
+# ZeroClaw Agent Configuration — EXAMPLE TEMPLATE
+# Copy this file to config/agent.toml and fill in your values.
+# ⚠️  NEVER commit agent.toml with real secrets.
+
+[agents.caixa]
+name = "caixa"
+description = "Solana Pay merchant payment terminal — WhatsApp channel"
+model_provider = "groq"
+model = "llama-3.3-70b-versatile"
+
+system_prompt = """
+You are Caixa, a Solana Pay payment assistant for a small merchant.
+You help process WhatsApp payment requests and generate Solana Pay QR codes.
+When a staff member sends "charge table N, X USDC", you generate a payment request.
+You are polite, concise, and business-like.
+"""
+
+[secrets]
+# Set these via environment variables in .env (see .env.example)
+# Or: zeroclaw secrets set <key> <value>
+GROQ_API_KEY      = "your_groq_api_key_here"
+HELIUS_API_KEY    = "your_helius_api_key_here"
+TWILIO_ACCOUNT_SID  = "your_twilio_account_sid"
+TWILIO_AUTH_TOKEN   = "your_twilio_auth_token"
+TWILIO_WHATSAPP_FROM = "whatsapp:+14155238886"
+
+[channels.whatsapp]
+type = "webhook"
+listen_port = 8080
+path = "/webhook/whatsapp"
+body_field = "Body"
+sender_field = "From"
+
+[memory]
+backend = "sqlite"
+path = "./data/caixa.db"
+
+[plugins]
+enabled = true
+
+[[plugins.tools]]
+name = "solana_risk_check"
+path = "./plugins/solana-risk/target/wasm32-wasip2/release/zeroclaw_solana_risk.wasm"
+permissions = ["http_client", "config_read"]
+
+[solana]
+# Use mainnet for production, devnet for testing
+rpc_url = "https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}"
+# rpc_url = "https://devnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}"  # for devnet
+network = "mainnet"
+
+usdc_mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # Mainnet USDC
+usdt_mint = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"  # Mainnet USDT
+
+# Your Solana wallet public key (receive-only — NO private key ever goes here)
+merchant_address = "your_solana_wallet_address_here"
+
+# Amounts above this trigger a human approval checkpoint (T2 safety gate)
+approval_threshold_usdc = 100
+
+[sops]
+directory = "./sops"
+
+[skills]
+directory = "./skills"

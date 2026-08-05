@@ -1,17 +1,28 @@
 # Git ignore file for Caixa — ZeroClaw Solana Pay agent
 
-# ⚠️  NEVER commit these files
-config/agent.toml       # Contains real API keys and secrets
-config/config.toml      # Contains real API keys and secrets
-data/                   # Agent memory database
-*.db                    # SQLite files
+# ⚠️  NEVER commit these files — contain real API keys and secrets
+config/agent.toml
+config/config.toml
+config/.secret_key
+
+# ZeroClaw runtime data — agent memory, sessions, state
+config/data/
+config/state/
+data/
+*.db
+*.db-shm
+*.db-wal
+*.jsonl
+*.tmp.*
+
+# Schema generated at runtime
+schema.json
 
 # Compiled artifacts
 target/
-*.wasm                  # Built WASM files (committed separately if needed)
+*.wasm
 
 # Rust build artifacts
-Cargo.lock              # Keep for applications, remove for libraries
 **/*.rs.bk
 
 # Editor files
@@ -20,16 +31,14 @@ Cargo.lock              # Keep for applications, remove for libraries
 .idea/
 *.swp
 
-# Environment files
+# Environment files — NEVER commit real .env
 .env
 .env.local
 
-# ZeroClaw runtime files
-zeroclaw/               # Local ZeroClaw source checkout
-zeroclaw-release/       # Downloaded release binary
+# ZeroClaw runtime directories
+zeroclaw/
+zeroclaw-release/
 
 # Logs
 logs/
 *.log
-zeroclaw/
-.env
