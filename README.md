@@ -78,9 +78,9 @@ cd zeroclaw-caixa
 2. Copy as `HELIUS_API_KEY`
 
 ### Twilio WhatsApp Sandbox (free)
-1. Go directly to the [Twilio WhatsApp Sandbox Console](https://console.twilio.com/us1/develop/sms/whatsapp/sandbox)
+1. Go directly to the [Twilio WhatsApp Sandbox Setup](https://console.twilio.com/us1/develop/sms/try-it-out/whatsapp-learn?frameUrl=%2Fconsole%2Fsms%2Fwhatsapp%2Flearn%3Fx-target-region%3Dus1) or the [Alternative Sandbox link](https://console.twilio.com/us1/develop/sms/whatsapp/sandbox)
 2. **Join the sandbox**: text the code shown on the page (e.g. `join <your-sandbox-code>`) to `+1 415 523 8886` from your phone
-3. Copy your **Account SID** and **Auth Token** from the console home page
+3. Copy your **Account SID** and **Auth Token** from the Twilio Console home page
 
 ### Solana wallet
 1. Create or open a wallet in Phantom (https://phantom.app) or Solflare (https://solflare.com)
@@ -123,7 +123,7 @@ Copy the `https://xxxx.ngrok-free.app` URL from the output.
 
 ## Step 5 - Set the Twilio webhook
 
-1. Go directly to the [Twilio WhatsApp Sandbox Settings](https://console.twilio.com/us1/develop/sms/whatsapp/sandbox)
+1. Go directly to the [Twilio WhatsApp Sandbox Settings](https://console.twilio.com/us1/develop/sms/try-it-out/whatsapp-learn?frameUrl=%2Fconsole%2Fsms%2Fwhatsapp%2Flearn%3Fx-target-region%3Dus1) or the [Alternative Sandbox link](https://console.twilio.com/us1/develop/sms/whatsapp/sandbox)
 2. Under **"When a message comes in"** -> paste your ngrok URL + `/webhook/whatsapp`:
    ```
    https://xxxx.ngrok-free.app/webhook/whatsapp
