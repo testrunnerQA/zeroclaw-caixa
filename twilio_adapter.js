@@ -118,7 +118,13 @@ function buildSolanaPayUrl(amount, tableNum, referenceKey) {
 }
 
 function buildQrProxyUrl(payUrl) {
+  // Used by dashboard only — goes through ngrok proxy
   return BASE_URL ? `${BASE_URL}/qr?d=${encodeURIComponent(payUrl)}` : null;
+}
+
+function buildQrDirectUrl(payUrl) {
+  // Used by Twilio <Media> — direct qrserver.com URL, publicly accessible by Twilio
+  return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(payUrl)}`;
 }
 
 function buildPayLink(payUrl) {
@@ -400,7 +406,7 @@ const server = http.createServer(async (req, res) => {
         const invoiceId = invoiceCounter++;
         const refKey   = generateReferenceKey();
         const payUrl   = buildSolanaPayUrl(amount, tableNum, refKey);
-        const qrUrl    = buildQrProxyUrl(payUrl);   // ngrok URL — for Twilio <Media>
+        const qrUrl    = buildQrDirectUrl(payUrl);  // direct qrserver URL — for Twilio <Media>
         const tapLink  = buildPayLink(payUrl);
         // Direct qrserver URL — works in browser without proxy
         const qrUrlBrowser = `https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=20&ecc=M&data=${encodeURIComponent(payUrl)}`;
@@ -464,7 +470,7 @@ a.btn{display:inline-block;padding:16px 32px;background:#9945FF;color:#fff;borde
             tableLabel = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);  // capitalize first letter only
           }
           const payUrl     = buildSolanaPayUrl(charge.amount, tableLabel, refKey);
-          const qrUrl      = buildQrProxyUrl(payUrl);
+          const qrUrl      = buildQrDirectUrl(payUrl);  // direct qrserver URL — for Twilio <Media>
           const tapLink    = buildPayLink(payUrl);
 
           // Register invoice for polling
