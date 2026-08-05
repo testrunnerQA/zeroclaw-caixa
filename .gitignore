@@ -32,3 +32,4 @@ zeroclaw-release/       # Downloaded release binary
 logs/
 *.log
 zeroclaw/
+.env
