@@ -443,9 +443,24 @@
             }
         }
 
-        // Restore last QR on page refresh
-        const saved = localStorage.getItem('lastInvoice');
-        if (saved) { try { showQr(JSON.parse(saved)); } catch(_) {} }
+        // Restore last QR only if invoice is still pending after server restart
+        async function tryRestoreQr() {
+            const saved = localStorage.getItem('lastInvoice');
+            if (!saved) return;
+            try {
+                const inv = JSON.parse(saved);
+                const r = await fetch('/api/invoices');
+                const invoices = await r.json();
+                const stillPending = invoices.find(i => i.invoiceId === inv.invoiceId && i.status === 'pending');
+                if (stillPending) {
+                    showQr(stillPending);
+                } else {
+                    // Invoice gone (paid or server restarted) — clear stale QR
+                    localStorage.removeItem('lastInvoice');
+                }
+            } catch(_) {}
+        }
+        tryRestoreQr();
 
         loadConfig();
     </script>
