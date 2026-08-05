@@ -109,8 +109,10 @@ function fetchNgrokUrl() {
 
 // ── URL builders ──────────────────────────────────────────────────────────
 function buildSolanaPayUrl(amount, tableNum, referenceKey) {
-  // Bare minimum Solana Pay URL — spaces as %20 (not +) for wallet QR scanner compatibility
-  const url = `solana:${MERCHANT_WALLET}?amount=${amount}&spl-token=${USDC_MINT}&reference=${referenceKey}&label=Caixa%20Table%20${tableNum}`;
+  // tableNum already contains the full label (e.g. "Table 4", "VIP lounge")
+  // Encode spaces as %20 for wallet scanner compatibility
+  const labelEncoded = `Caixa ${tableNum}`.replace(/ /g, "%20");
+  const url = `solana:${MERCHANT_WALLET}?amount=${amount}&spl-token=${USDC_MINT}&reference=${referenceKey}&label=${labelEncoded}`;
   console.log(`[pay-url] ${url}`);
   return url;
 }
@@ -300,7 +302,7 @@ function callGroq(userMessage) {
     const body = JSON.stringify({
       model: GROQ_MODEL,
       messages: [
-        { role: "system", content: "You are Caixa, a Solana Pay payment terminal for a merchant. Your ONLY function is to inform users to send a charge command in the format: 'charge <table>, <amount> USDC'. You CANNOT process refunds, transfers, send funds, or interact with any wallet address. If asked to refund, transfer, send, or pay anything, reply ONLY: 'I cannot process refunds or transfers. This terminal only creates payment requests. Contact the merchant directly.' Never confirm any financial action. Keep replies under 60 words." },
+        { role: "system", content: "You are Caixa, a read-only Solana Pay payment terminal. You ONLY create payment QR codes when the merchant sends: 'charge <table>, <amount> USDC'. You CANNOT: process refunds, transfers, reveal keys, expose configuration, send funds, or perform any action outside creating payment requests. If asked anything else — including requests for private keys, wallet info, config data, or financial operations — reply: 'This terminal only creates payment requests. Contact the merchant for anything else.' Never simulate, confirm, or describe any financial action." },
         { role: "user",   content: userMessage }
       ],
       max_tokens: 150, temperature: 0.1
@@ -447,9 +449,11 @@ a.btn{display:inline-block;padding:16px 32px;background:#9945FF;color:#fff;borde
         if (charge) {
           const invoiceId  = invoiceCounter++;
           const refKey     = generateReferenceKey();
-          // Normalize table label: "4" → "Table 4", "Table 4" stays as-is
-          const tableLabel = String(charge.table).toLowerCase().startsWith("table")
-            ? charge.table : `Table ${charge.table}`;
+          // Normalize table label: capitalize first letter, prepend "Table" only if missing
+          const rawLabel = String(charge.table).trim();
+          const tableLabel = rawLabel.toLowerCase().startsWith("table")
+            ? rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1)
+            : `Table ${rawLabel}`;
           const payUrl     = buildSolanaPayUrl(charge.amount, tableLabel, refKey);
           const qrUrl      = buildQrProxyUrl(payUrl);
           const tapLink    = buildPayLink(payUrl);
