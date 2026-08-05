@@ -135,14 +135,18 @@ Copy the `https://xxxx.ngrok-free.app` URL from the output.
 
 ---
 
-## Step 6 - Start the adapter
+## Step 6 - Start the services
+
+You need to run both the Node.js adapter and the ZeroClaw daemon.
+
+### 6.1 Start the Twilio adapter
+In your first terminal window:
 
 ```bash
 node twilio_adapter.js
 ```
 
 Expected output:
-
 ```
 Caixa Payment Terminal - port 8080
 ngrok:    https://xxxx.ngrok-free.app
@@ -151,6 +155,14 @@ RPC:      Helius mainnet
 Polling:  every 10s
 
 Ready. Text 'charge table N, X USDC' to the sandbox!
+```
+
+### 6.2 Start the ZeroClaw daemon (Agent Runtime)
+In a new terminal window, export the environment variables and boot the ZeroClaw daemon:
+
+```bash
+export $(grep -v '^#' .env | xargs)
+./zeroclaw/target/release/zeroclaw daemon --config-dir config/
 ```
 
 ---
