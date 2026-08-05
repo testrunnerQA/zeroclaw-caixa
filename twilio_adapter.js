@@ -54,6 +54,8 @@ const TWILIO_FROM        = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+141552
 let invoiceCounter = 1;
 // Map<referenceKey (base58) → { invoiceId, table, amount, from, createdAt }>
 const pendingInvoices = new Map();
+// Array of completed invoices kept for dashboard history
+const paidInvoices = [];
 
 // ── Pending WhatsApp notifications (delivered on next inbound message) ─────
 // Map<whatsapp_number → string[]>
@@ -187,6 +189,9 @@ async function checkPendingPayments() {
         console.log(`[poll] 💰 Amount: ${invoice.amount} USDC`);
         console.log(`[poll] 🔗 Tx: https://solscan.io/tx/${sig}`);
         pendingInvoices.delete(refKey);
+        // Save to paid history for dashboard
+        paidInvoices.unshift({ ...invoice, signature: sig, paidAt: Date.now(), status: "paid" });
+        if (paidInvoices.length > 100) paidInvoices.pop(); // keep last 100
         // Notify merchant
         await sendPaymentConfirmation(invoice, sig);
       }
@@ -272,17 +277,11 @@ async function sendPaymentConfirmation(invoice, signature) {
   const explorerUrl = `https://solscan.io/tx/${signature}`;
   const msg = `✅ Invoice #${invoice.invoiceId} paid!\n\nTable: ${invoice.table}\nAmount: ${invoice.amount} USDC\n\n🔗 ${explorerUrl}`;
 
-  // Try Twilio REST API first (works with dedicated WhatsApp number)
-  try {
-    await sendWhatsApp(invoice.from, msg);
-    console.log(`[poll] ✅ Merchant notified on WhatsApp`);
-    return;
-  } catch (_) {}
-
-  // Fallback: queue for delivery on merchant's next inbound message
+  // Queue confirmation — delivered via TwiML on merchant's next WhatsApp message
+  // (Twilio sandbox blocks proactive REST API messages regardless of ContentSid)
   if (invoice.from && invoice.from.startsWith("whatsapp:")) {
     queueNotification(invoice.from, msg);
-    console.log(`[poll] 📬 Confirmation queued for ${invoice.from} — will deliver on next message`);
+    console.log(`[poll] 📬 Confirmation queued → will arrive on next WhatsApp message`);
   }
   console.log(`[poll] 📋 Confirmation:\n${msg}`);
 }
@@ -360,7 +359,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // GET /api/invoices — return list of pending invoices
+  // GET /api/invoices — return pending + paid invoices for dashboard history
   if (req.method === "GET" && parsed.pathname === "/api/invoices") {
     const list = [];
     for (const [refKey, inv] of pendingInvoices) {
@@ -368,7 +367,12 @@ const server = http.createServer(async (req, res) => {
         ? `https://api.qrserver.com/v1/create-qr-code/?size=600x600&margin=20&ecc=M&data=${encodeURIComponent(inv.payUrl)}`
         : null;
       const tapLink = inv.payUrl ? buildPayLink(inv.payUrl) : null;
-      list.push({ ...inv, refKey: refKey.slice(0, 8) + "...", qrUrl, tapLink });
+      list.push({ ...inv, refKey: refKey.slice(0, 8) + "...", qrUrl, tapLink, status: "pending" });
+    }
+    // Append paid invoices (most recent first)
+    for (const inv of paidInvoices) {
+      const solscanUrl = `https://solscan.io/tx/${inv.signature}`;
+      list.push({ ...inv, refKey: "paid", qrUrl: null, tapLink: solscanUrl });
     }
     res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
     res.end(JSON.stringify(list));

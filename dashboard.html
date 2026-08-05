@@ -233,6 +233,11 @@
             color: var(--secondary);
         }
 
+        .status-pill.paid {
+            background-color: rgba(20, 241, 149, 0.15);
+            color: #14F195;
+        }
+
         .status-pill.pending {
             background-color: rgba(255, 171, 0, 0.15);
             color: #FFAB00;
@@ -356,20 +361,36 @@
                     // Sort newest first (highest invoiceId first)
                     invoices.sort((a, b) => b.invoiceId - a.invoiceId);
                     for (const inv of invoices) {
+                        const isPaid = inv.status === 'paid';
                         const row = document.createElement('tr');
-                        row.style.cursor = 'pointer';
-                        row.title = 'Click to show QR';
+                        row.style.cursor = isPaid ? 'default' : 'pointer';
+                        row.title = isPaid ? `✅ Paid — view on Solscan` : 'Click to show QR';
+                        if (isPaid) row.style.opacity = '0.75';
+                        const solscanCell = isPaid
+                            ? `<a href="https://solscan.io/tx/${inv.signature}" target="_blank" style="color:var(--accent);font-size:0.75rem">View Tx ↗</a>`
+                            : inv.refKey;
                         row.innerHTML = `
                             <td>#${String(inv.invoiceId).padStart(3,'0')}</td>
                             <td>${inv.table}</td>
                             <td>${inv.amount} USDC</td>
-                            <td><span class="status-pill pending">Pending</span></td>
-                            <td>${inv.refKey}</td>
+                            <td><span class="status-pill ${isPaid ? 'paid' : 'pending'}">${isPaid ? '✅ Paid' : 'Pending'}</span></td>
+                            <td>${solscanCell}</td>
                         `;
-                        row.addEventListener('click', () => { showQr(inv); localStorage.setItem('lastInvoice', JSON.stringify(inv)); });
+                        if (!isPaid) {
+                            row.addEventListener('click', () => { showQr(inv); localStorage.setItem('lastInvoice', JSON.stringify(inv)); });
+                        }
                         table.appendChild(row);
                     }
                 }
+                // Update stats
+                const totalUsdc = invoices
+                    .filter(i => i.status === 'paid')
+                    .reduce((s, i) => s + parseFloat(i.amount || 0), 0);
+                const pendingCount = invoices.filter(i => i.status === 'pending').length;
+                const usdcEl = document.getElementById('stat-usdc');
+                const pendingEl2 = document.getElementById('stat-pending');
+                if (usdcEl) usdcEl.textContent = '$' + totalUsdc.toFixed(2);
+                if (pendingEl2) pendingEl2.textContent = pendingCount;
             } catch (_) {}
         }
 
