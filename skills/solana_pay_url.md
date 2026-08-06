@@ -21,27 +21,17 @@ solana:<recipient>?amount=<amount>&spl-token=<mint>&reference=<reference_pubkey>
 
 ## How to Generate the Reference Key
 
-Call this RPC method to generate a new keypair's pubkey deterministically from the invoice number:
+To ensure payment detection is unique and secure:
+1. Generate a brand new, random keypair locally using `@solana/web3.js`:
+   ```javascript
+   const referenceKeypair = Keypair.generate();
+   const referencePubkey = referenceKeypair.publicKey.toString();
+   ```
+2. Store the public key as the `reference` parameter in the Solana Pay URL.
+3. Save the public key in memory associated with the invoice ID.
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "getRecentBlockhash",
-  "params": []
-}
-```
+This allows us to poll the RPC for transaction signatures containing this specific, unique public key.
 
-**In practice (simplest approach):** Use a timestamp-based reference key. 
-The reference pubkey is stored in agent memory keyed to the invoice number.
-For our purposes, generate a 32-byte random reference as base58.
-
-Use this approach:
-1. Generate a random 32-byte hex string (you can compute this from a hash of: invoice_number + timestamp + merchant_address)
-2. Encode it as base58 (the ZeroClaw agent can use http_request to call a base58 encoding utility or compute manually)
-
-**Shortcut for T1:** Use the invoice number padded to 32 bytes as a deterministic reference.
-The actual key doesn't need signing power — it's just an observable address.
 
 ## Example Construction
 
