@@ -127,11 +127,12 @@ function buildPayLink(payUrl) {
 
 // ── Parse charge command ──────────────────────────────────────────────────
 function parseCharge(text) {
-  // Match: "charge <description>, <amount> usdc"  (comma optional)
+  // Match: "charge <description>, <amount> usdc"  (comma optional, USDC optional)
   // Examples: "charge table 4, 0.01 usdc"
   //           "charge table 4 seat 2, 4 USDC"
   //           "charge VIP lounge, 50 USDC"
-  const m = text.match(/charge\s+(.+?)[\s,]+([\d.]+)\s*usdc/i);
+  //           "charge table 4, 0.01"   ← also accepted
+  const m = text.match(/charge\s+(.+?)[\s,]+([\d.]+)\s*(?:usdc)?/i);
   if (m) {
     const label = m[1].trim().replace(/,\s*$/, ""); // strip trailing comma
     const amount = m[2];
