@@ -86,4 +86,4 @@ invoices:<invoice_id> = {
 - NEVER generate a URL with a private key embedded
 - NEVER use the merchant's wallet to sign anything — they scan the QR and their wallet signs
 - If amount > 100 USDC, flag for approval checkpoint BEFORE posting the URL
-- Only generate URLs for USDC, USDT, or native SOL (reject other tokens)
+- Only generate URLs for USDC (reject other tokens)
