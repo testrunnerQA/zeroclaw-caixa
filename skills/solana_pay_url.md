@@ -54,14 +54,21 @@ Output URL:
 solana:9YourMerchantAddressHere?amount=25&spl-token=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&reference=7xKpRmNvBs3qWfYjHdLtA8Ceu2NoPdWmXsKyZbQrT9j&label=Caixa&message=Table%204%20%E2%80%94%20Invoice%20%23412
 ```
 
-## QR Code Link Format
+## QR Code & Tap-to-Pay Links
 
-For WhatsApp, wrap the URL in a wallet-compatible deep link:
-```
-https://solana-pay.vercel.app/?url=<URL-encoded solana: URL>
-```
+Caixa delivers two links per invoice:
 
-Or use a Blink via Dialect if the merchant's wallet supports it.
+1. **QR Image** — served directly from qrserver.com (publicly accessible, no proxy):
+   ```
+   https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=<URL-encoded solana: URL>
+   ```
+   This URL is sent as the Twilio `<Media>` attachment so WhatsApp renders the QR image inline.
+
+2. **Tap-to-Pay link** — served through the adapter's `/pay` redirect:
+   ```
+   https://<ngrok-url>/pay?url=<URL-encoded solana: URL>
+   ```
+   Tapping this link opens the payment directly in the user's Phantom or Solflare wallet.
 
 ## What to Return
 
