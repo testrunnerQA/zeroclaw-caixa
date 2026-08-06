@@ -132,7 +132,7 @@ function parseCharge(text) {
   //           "charge table 4 seat 2, 4 USDC"
   //           "charge VIP lounge, 50 USDC"
   //           "charge table 4, 0.01"   ← also accepted
-  const m = text.match(/charge\s+(.+?)[\s,]+([\d.]+)\s*(?:usdc)?/i);
+  const m = text.match(/charge\s+(.+?)[\s,]+([\d.]+)\s*(?:usdc)?\s*$/i);
   if (m) {
     const label = m[1].trim().replace(/,\s*$/, ""); // strip trailing comma
     const amount = m[2];
