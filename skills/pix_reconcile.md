@@ -1,10 +1,11 @@
 # PIX Reconciliation & BRL-to-USDC Invoicing
 
-## What You Are
+> **Status: Roadmap** — The skill and SOP are fully designed and documented.
+> PIX support is not yet wired into `twilio_adapter.js` but is the planned next step.
+> Current live feature: Solana Pay (USDC) via WhatsApp QR code.
 
-You teach the agent how to reconcile Brazilian PIX instant payments and match them to stablecoin balances. This is a highly requested "Brazil-first flow" that allows local merchants to accept BRL and settle / credit stablecoin balances on-chain.
+## What This Will Do
 
-## Flow logic
 
 1. **Inbound PIX invoice request:** Merchant says `"charge table 4, 150 BRL (PIX)"`
 2. **Retrieve Current Price:** Fetch BRL/USD price from Jupiter's stablecoin quotes or a Switchboard BRL data feed.
