@@ -213,12 +213,15 @@ https://solscan.io/tx/...
 
 ## Supported charge commands
 
+The `USDC` suffix is optional:
+
 | Command | Parsed as |
 |---------|-----------|
 | `charge table 4, 0.01 USDC` | Table 4, 0.01 USDC |
+| `charge table 4, 0.01` | Table 4, 0.01 USDC (USDC default) |
 | `charge table 12 seat 2, 25 USDC` | Table 12 seat 2, 25 USDC |
-| `charge VIP lounge, 50 USDC` | VIP lounge, 50 USDC |
-| `charge bar counter, 12.5 USDC` | bar counter, 12.5 USDC |
+| `charge VIP lounge, 50` | VIP lounge, 50.00 USDC |
+| `charge bar counter, 12.5` | bar counter, 12.50 USDC |
 
 ---
 
