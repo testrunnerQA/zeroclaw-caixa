@@ -35,36 +35,7 @@ Amount: <amount> USDC
 
 ## Error Receipt (Failed Transaction)
 
-```
-⚠️ *Payment Error*
-
-Invoice #<invoice_id> — Transaction failed on-chain.
-Ask the customer to try again.
-🔗 Failed tx: https://solscan.io/tx/<signature>
-```
-
-## Pending Reminder (sent after 5 min of no payment)
-
-```
-⏳ *Payment Pending*
-
-Invoice #<invoice_id> for <amount> <token> is still unpaid.
-Link: <Solana Pay URL>
-
-Reply "cancel <invoice_id>" to void this invoice.
-```
-
-## Daily Summary (optional — sent by cron SOP at end of day)
-
-```
-📊 *Daily Summary — <date>*
-
-✅ Paid: <count> invoices — <total> USDC
-⏳ Pending: <count> invoices
-❌ Failed: <count> invoices
-
-Top transaction: Invoice #<id> — <amount> USDC
-```
+// (Note: Error receipts, pending reminders, and daily summaries are not yet implemented in the current twilio_adapter.js runtime. Only the main payment receipt above is live.)
 
 ## Rules
 
