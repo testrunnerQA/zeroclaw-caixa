@@ -5,19 +5,15 @@
 You format merchant payment receipts for WhatsApp delivery. 
 Receipts must be clear, professional, and short enough to read on a phone.
 
-## Receipt Format (WhatsApp)
+## Receipt Format (WhatsApp — actual output)
 
 ```
-✅ *Payment Confirmed*
+✅ Invoice #<invoice_id> paid!
 
-📋 Invoice #<invoice_id>
-💰 Amount: <amount> <token>
-🏷️  Memo: <memo>
-⏰ Time: <human-readable timestamp>
-🔗 Transaction: https://solscan.io/tx/<signature>
-    (Short: https://solscan.io/tx/<first 8 chars>...)
+Table: <memo>
+Amount: <amount> USDC
 
-_Powered by Caixa × Solana Pay_
+🔗 https://solscan.io/tx/<signature>
 ```
 
 ## Fields

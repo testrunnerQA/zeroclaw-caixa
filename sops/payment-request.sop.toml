@@ -100,22 +100,22 @@ depends_on = ["generate_invoice_id"]
 id = "post_payment_link"
 name = "Send payment link to merchant"
 instruction = """
-Send the following message to the merchant on the WhatsApp channel:
+Send the payment QR code and tap-to-pay link to the merchant on the WhatsApp channel via TwiML:
 
----
-💳 *Invoice #{{invoice_id}} Created*
+- **QR Image** (sent as Twilio `<Media>` attachment — renders inline in WhatsApp):
+  `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=<url-encoded solana: URL>`
 
-Amount: *{{amount}} USDC*
-For: {{memo}}
+- **Text body** with invoice details and tap-to-pay link:
+  ```
+  💳 Invoice #<invoice_id> — <memo>
+  Amount: <amount> USDC
 
-👇 Share this link with your customer:
-{{solana_pay_url}}
+  👇 Tap to pay in Phantom/Solflare:
+  https://<ngrok-url>/pay?url=<url-encoded solana: URL>
 
-Or scan via Phantom/Backpack wallet.
-Payment will be confirmed automatically within 30 seconds of on-chain settlement.
----
-
-Also save the message to memory for audit trail.
+  Payment confirmed automatically within 10s of on-chain settlement.
+  Send 'status' to receive your receipt.
+  ```
 """
 depends_on = ["build_solana_pay_url"]
 
