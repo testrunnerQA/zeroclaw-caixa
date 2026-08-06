@@ -13,7 +13,7 @@ solana:<recipient>?amount=<amount>&spl-token=<mint>&reference=<reference_pubkey>
 
 **Fields:**
 - `recipient` — the merchant's Solana wallet address (from config: `merchant_address`)
-- `amount` — the payment amount in the token's decimals (USDC = 6 decimals, so 25 USDC = 25.000000)
+- `amount` — the payment amount formatted as a standard decimal string (e.g. `25` or `0.01`). The standard decimal representation is used, not atomic token units.
 - `spl-token` — the SPL token mint. USDC mainnet = `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`
 - `reference` — a **NEW** random pubkey generated for this invoice only. This is how we detect payment.
 - `label` — short merchant/shop name, URL-encoded
